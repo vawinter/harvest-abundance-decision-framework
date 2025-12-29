@@ -8,75 +8,9 @@ This repository contains code for evaluating optimal harvest season lengths for 
 2. **Maximizing fall hunting opportunity** (season length)
 
 Key contributions include:
-- Integration of **stakeholder-derived utility weights** from hunter preference surveys
+- Integration of **stakeholder-derived utility weight and preference adjustments** from hunter preference surveys
 - Evaluation of **decision timing** (January, April, September) to quantify the value of information
 - Weather-informed **recruitment predictions** for April decision updates
-
-## Analysis Components
-
-### 01_prep_choice_model
-
-Analyzes discrete choice experiment survey data to quantify hunter preferences for season length under different population trends.
-
-**Scripts:**
-- `01_visualize_choice_model.R` - Visualize raw preference patterns  
-- `02_calculate_utility_weights.R` - Calculate normalized utility weights
-
-**Key Outputs:**
-- `norm_weights_popsize_scenario_[A/B/C].csv` - Utility weights for three scenarios reflecting uncertainty in support for closed seasons during population decline
-
-**Methods:** Bias-reduced logistic regression (brglm2 package)
-
----
-
-### 02_prep_population_parameters
-
-Derives density-dependent population parameters from multiple data sources.
-
-#### Data Preparation Scripts
-
-**00_generate_sampling_points.R**
-- Creates 300 random points per WMU region for spatially representative weather sampling
-
-**01_extract_density_from_IPM.R**  
-- Extracts female density, poults per brood (PPB), hen-with-brood (HWB) from integrated population model (Winter et al., in review)
-- Provides scaling factors to convert BBS indices to absolute densities
-
-#### Parameter Estimation Scripts
-
-**02_BBS_logistic_growth.R**
-- Fits logistic growth models to Breeding Bird Survey (BBS) data (1966-2023)
-- Estimates carrying capacity (K), intrinsic growth rate (r), inflection points  
-- Scales BBS indices to absolute densities using IPM estimates
-
-**Key Parameters:** F̄ (female density at inflection), P̄ (poult density at inflection), slope
-
-#### Weather-Based Recruitment Prediction Scripts
-
-**03_download_weather_data.R**
-- Downloads spring weather data (March-June) from Daymet for 3,000 locations
-
-**04_predict_recruitment_from_weather.R**
-- Fits GLMMs for hen-with-brood and poults-per-brood  
-- Applies temporal weighting centered on nest initiation (day-of-year 100)
-- Creates weather covariates for April predictions
-
-**05_fit_weather_recruitment_model.R**
-- Fits temperature-recruitment models with cross-validation (leave-one-year-out, leave-one-region-out)
-- Effect size analysis with standardized coefficients
-
-**06_generate_april_predictions.R**
-- Predicts April recruitment based on spring temperature
-- Compares April vs September parameter estimates
-- Calculates value of information from waiting
-
-#### Scenario Creation Scripts
-
-**07_create_population_scenarios.R**
-- Creates baseline scenarios from observed median parameters
-- Generates ±10% adjustments for increase/decrease population trends  
-- Applies weather model refinements for April timing
-- Produces 9 scenario parameter files (3 decision timings × 3 population trends)
 
 **Decision Timing Scenarios:**
 
@@ -86,15 +20,7 @@ Derives density-dependent population parameters from multiple data sources.
 | **April** | Medium | Weather-predicted | High (osig = 2.3) |
 | **September** | Highest | Observed recruitment | Low (osig = 1.0) |
 
-#### Helper Functions
-
-**99_pph_density_fun.R**
-- Density-dependent fecundity function (reverse sigmoidal)
-- P(F) = [2η × P̄] / [η + 1 + (η-1) × (F/F̄)^η]
-
----
-
-### 03_MDP_execution
+### Analysis Components
 
 Implements stochastic dynamic programming to determine optimal season lengths.
 
