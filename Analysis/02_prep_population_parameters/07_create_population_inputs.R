@@ -1,0 +1,318 @@
+################################################################################
+# Create Population Trend Scenarios for Decision Model
+################################################################################
+#
+# Purpose: 
+#   Generate Pbar (poults per hen at inflection) values for three population
+#   trend scenarios (Increase, Stable, Decrease) using:
+#   1. Observed median Pbar from PA WMUs as "stable" baseline
+#   2. ±10% adjustments for increase/decrease scenarios
+#   3. Weather model refinements for April decision timing
+#
+# Rationale:
+#   - Stable = median observed Pbar across PA regions
+#   - Increase = +10% from stable (favorable conditions)
+#   - Decrease = -10% from stable (unfavorable conditions)
+#   - April values refined by temperature-recruitment relationship
+#
+# Input:  
+#   region_parameters_for_mdp.csv (BBS-derived parameters, script 02)
+#   april_scaled_weather2.rds (April weather data, script 04)
+#   Fitted weather-recruitment model (script 05)
+#
+# Output:
+#   Scenario-specific parameter files for MATLAB MDP model
+#
+# Author: Veronica A. Winter
+# Date: December 2025
+################################################################################
+
+rm(list = ls())
+gc()
+
+library(glmmTMB)
+library(dplyr)
+
+################################################################################
+# 1. CALCULATE BASELINE "STABLE" PBAR FROM OBSERVED DATA
+################################################################################
+
+cat("\n========== CALCULATING BASELINE PBAR ==========\n")
+
+# Load observed Pbar values from BBS analysis (script 02)
+# These are empirically-derived inflection point parameters
+region_params <- read.csv('Data/region_parameters_for_mdp.csv')
+
+# Calculate median Pbar across all PA WMU regions
+# This represents "average" or "stable" conditions
+Pbar_stable_base <- median(region_params$Pbar, na.rm = TRUE)
+
+cat("Observed Pbar values across regions:\n")
+print(region_params %>% select(WMU_Group, Pbar))
+
+cat("\nMedian Pbar (STABLE baseline):", round(Pbar_stable_base, 3), "\n")
+
+################################################################################
+# 2. CREATE ±10% SCENARIOS FOR INCREASE/DECREASE
+################################################################################
+
+cat("\n========== CREATING POPULATION TREND SCENARIOS ==========\n")
+
+# Stable = median observed (baseline)
+Pbar_stable <- Pbar_stable_base
+
+# Increase = +10% from stable (favorable reproduction)
+Pbar_increase <- Pbar_stable_base * 1.10
+
+# Decrease = -10% from stable (poor reproduction)
+Pbar_decrease <- Pbar_stable_base * 0.90
+
+cat("Population trend scenarios (±10% from median):\n")
+cat("  Stable (baseline):", round(Pbar_stable, 3), "\n")
+cat("  Increase (+10%):", round(Pbar_increase, 3), "\n")
+cat("  Decrease (-10%):", round(Pbar_decrease, 3), "\n")
+
+# Similarly adjust Fbar (female density at inflection)
+Fbar_stable_base <- median(region_params$Fbar, na.rm = TRUE)
+Fbar_stable <- Fbar_stable_base
+Fbar_increase <- Fbar_stable_base * 1.10
+Fbar_decrease <- Fbar_stable_base * 0.90
+
+cat("\nFemale density at inflection (Fbar):\n")
+cat("  Stable:", round(Fbar_stable, 3), "\n")
+cat("  Increase:", round(Fbar_increase, 3), "\n")
+cat("  Decrease:", round(Fbar_decrease, 3), "\n")
+
+################################################################################
+# 3. FIT WEATHER-RECRUITMENT MODEL FOR APRIL REFINEMENT
+################################################################################
+
+cat("\n========== FITTING WEATHER-RECRUITMENT MODEL ==========\n")
+
+# Load April weather data
+month <- "april"
+scaled_weather <- readRDS(paste0("Data/Rec_data/", month, "_scaled_weather2.rds"))
+
+# Load observed PPB data
+ph_df <- readRDS("Data/Rec_data/ph_df_aug31.rds")
+
+# Join data
+ph_train <- ph_df %>%
+  left_join(scaled_weather, by = c("Year", "MU"))
+
+# Fit model: PPB ~ temperature
+ph_formula <- PHratio ~ 0 + scale_avg_temperature + (1|MU)
+m.refined.ph <- glmmTMB(ph_formula, data = ph_train, 
+                        family = gaussian(link = "identity"))
+
+# Extract temperature coefficient
+temp_coef <- fixef(m.refined.ph)$cond["scale_avg_temperature"]
+
+cat("Temperature effect on PPB:", round(temp_coef, 4), "\n")
+
+################################################################################
+# 4. DEFINE TEMPERATURE SCENARIOS FOR APRIL
+################################################################################
+
+cat("\n========== DEFINING TEMPERATURE SCENARIOS ==========\n")
+
+# Calculate temperature quantiles from historical data
+temp_quantiles <- quantile(ph_train$scale_avg_temperature, 
+                           probs = c(0.1, 0.5, 0.9), na.rm = TRUE)
+
+temp_cold <- temp_quantiles[1]   # 10th percentile (cold spring)
+temp_avg <- temp_quantiles[2]    # 50th percentile (average spring)
+temp_warm <- temp_quantiles[3]   # 90th percentile (warm spring)
+
+cat("Temperature scenarios (standardized):\n")
+cat("  Cold spring (10th percentile):", round(temp_cold, 3), "\n")
+cat("  Average spring (median):", round(temp_avg, 3), "\n")
+cat("  Warm spring (90th percentile):", round(temp_warm, 3), "\n")
+
+################################################################################
+# 5. CALCULATE WEATHER ADJUSTMENTS TO PBAR
+################################################################################
+
+cat("\n========== CALCULATING WEATHER ADJUSTMENTS ==========\n")
+
+# Calculate PPB effect of cold/warm spring relative to average
+# Effect = coefficient × (scenario_temp - average_temp)
+effect_cold <- temp_coef * (temp_cold - temp_avg)
+effect_warm <- temp_coef * (temp_warm - temp_avg)
+
+cat("Weather model effects on PPB:\n")
+cat("  Cold spring effect:", round(effect_cold, 4), "\n")
+cat("  Warm spring effect:", round(effect_warm, 4), "\n")
+
+# Apply adjustments to baseline Pbar values
+# For April, we're refining the estimate based on observed spring weather
+
+# Cold April (unfavorable weather)
+Pbar_stable_cold <- Pbar_stable + effect_cold
+Pbar_increase_cold <- Pbar_increase + effect_cold
+Pbar_decrease_cold <- Pbar_decrease + effect_cold
+
+# Warm April (favorable weather)
+Pbar_stable_warm <- Pbar_stable + effect_warm
+Pbar_increase_warm <- Pbar_increase + effect_warm
+Pbar_decrease_warm <- Pbar_decrease + effect_warm
+
+################################################################################
+# 6. SUMMARY OF ALL SCENARIO VALUES
+################################################################################
+
+cat("\n========== SUMMARY OF SCENARIO PARAMETERS ==========\n")
+
+# Create summary table
+scenario_table <- data.frame(
+  Decision_Timing = rep(c("Jan/Sept", "April_Cold", "April_Warm"), each = 3),
+  Population_Trend = rep(c("Decrease", "Stable", "Increase"), 3),
+  Fbar = c(
+    # Jan/Sept (no weather info)
+    Fbar_decrease, Fbar_stable, Fbar_increase,
+    # April Cold (weather info: cold)
+    Fbar_decrease, Fbar_stable, Fbar_increase,
+    # April Warm (weather info: warm)
+    Fbar_decrease, Fbar_stable, Fbar_increase
+  ),
+  Pbar = c(
+    # Jan/Sept (no weather info)
+    Pbar_decrease, Pbar_stable, Pbar_increase,
+    # April Cold (cold spring observed)
+    Pbar_decrease_cold, Pbar_stable_cold, Pbar_increase_cold,
+    # April Warm (warm spring observed)
+    Pbar_decrease_warm, Pbar_stable_warm, Pbar_increase_warm
+  )
+) %>%
+  mutate(
+    Fbar = round(Fbar, 3),
+    Pbar = round(Pbar, 3)
+  )
+
+print(scenario_table)
+
+# Save summary table
+write.csv(scenario_table, "Data/scenario_parameter_summary.csv", row.names = FALSE)
+
+################################################################################
+# 7. INTERPRET ADJUSTMENTS
+################################################################################
+
+cat("\n========== INTERPRETATION ==========\n")
+
+cat("Baseline (Jan/Sept, no weather info):\n")
+cat("  Stable: Pbar =", round(Pbar_stable, 3), "(median observed)\n")
+cat("  Increase: Pbar =", round(Pbar_increase, 3), "(+10%)\n")
+cat("  Decrease: Pbar =", round(Pbar_decrease, 3), "(-10%)\n\n")
+
+cat("April Cold Spring adjustments:\n")
+cat("  Adjustment:", round(effect_cold, 4), "\n")
+cat("  Stable: Pbar =", round(Pbar_stable_cold, 3), "\n")
+cat("  Increase: Pbar =", round(Pbar_increase_cold, 3), "\n")
+cat("  Decrease: Pbar =", round(Pbar_decrease_cold, 3), "\n\n")
+
+cat("April Warm Spring adjustments:\n")
+cat("  Adjustment:", round(effect_warm, 4), "\n")
+cat("  Stable: Pbar =", round(Pbar_stable_warm, 3), "\n")
+cat("  Increase: Pbar =", round(Pbar_increase_warm, 3), "\n")
+cat("  Decrease: Pbar =", round(Pbar_decrease_warm, 3), "\n\n")
+
+################################################################################
+# 8. CREATE PARAMETER FILES FOR MATLAB
+################################################################################
+
+cat("\n========== CREATING PARAMETER FILES FOR MDP ==========\n")
+
+# Load other required parameters
+params <- readRDS("Data/LogisticGrowthModParams_2023.rds")
+
+# Load density data
+if (file.exists("Analysis/02_prep_population_parameters/01_extract_density_from_IPM.R")) {
+  source("Analysis/02_prep_population_parameters/01_extract_density_from_IPM.R")
+  k_density <- abundance_fall %>% select(WMU_Group, total)
+} else {
+  stop("ERROR: Cannot find density script")
+}
+
+# Prepare parameter data frame
+params_df <- as.data.frame(params) %>% 
+  mutate(WMU_Group = rownames(params)) %>% 
+  left_join(k_density, by = "WMU_Group") %>% 
+  rename(K_density = total)
+
+# Fill missing values
+params_df$K_density <- ifelse(is.na(params_df$K_density), 
+                              mean(params_df$K_density, na.rm = TRUE), 
+                              params_df$K_density)
+
+# Calculate scaling factors
+params_df <- params_df %>%
+  mutate(
+    scaling_factor = K_density / K,
+    N_star = (K / 2) * scaling_factor,
+    Region = WMU_Group
+  )
+
+# Function to create parameter CSV for a specific scenario
+create_scenario_csv <- function(pbar_value, fbar_value, scenario_name) {
+  
+  # Create region-specific parameters with scenario Pbar
+  df <- params_df %>%
+    mutate(
+      Fbar = fbar_value,  # Same for all regions in scenario
+      Pbar = pbar_value,  # Same for all regions in scenario
+      slope = r,
+      K_density = K_density
+    ) %>%
+    select(WMU_Group, Fbar, Pbar, slope, K_density) %>%
+    filter(!WMU_Group == "Group 10")  # Exclude insufficient data group
+  
+  # Save CSV
+  filename <- paste0("Data/mdp_params_", scenario_name, ".csv")
+  write.csv(df, filename, row.names = FALSE)
+  
+  cat("✓ Saved:", filename, "\n")
+  return(df)
+}
+
+# Create parameter files for each scenario
+# January/September (no weather info)
+create_scenario_csv(Pbar_decrease, Fbar_decrease, "jan_sept_decrease")
+create_scenario_csv(Pbar_stable, Fbar_stable, "jan_sept_stable")
+create_scenario_csv(Pbar_increase, Fbar_increase, "jan_sept_increase")
+
+# April Cold
+create_scenario_csv(Pbar_decrease_cold, Fbar_decrease, "april_cold_decrease")
+create_scenario_csv(Pbar_stable_cold, Fbar_stable, "april_cold_stable")
+create_scenario_csv(Pbar_increase_cold, Fbar_increase, "april_cold_increase")
+
+# April Warm
+create_scenario_csv(Pbar_decrease_warm, Fbar_decrease, "april_warm_decrease")
+create_scenario_csv(Pbar_stable_warm, Fbar_stable, "april_warm_stable")
+create_scenario_csv(Pbar_increase_warm, Fbar_increase, "april_warm_increase")
+
+################################################################################
+# 9. USAGE IN MATLAB
+################################################################################
+
+cat("\n========== MATLAB USAGE ==========\n")
+cat("In your MATLAB script, load parameters based on scenario:\n\n")
+
+cat("% Example for April cold spring, stable population:\n")
+cat("params = readtable('Data/mdp_params_april_cold_stable.csv');\n")
+cat("Fbar = params.Fbar(1);  % Same for all regions\n")
+cat("Pbar = params.Pbar(1);  % Same for all regions\n")
+cat("slope = params.slope(1);  % Region 1 slope\n\n")
+
+cat("% Or set directly based on decision point and scenario:\n")
+cat("scenario_month = 'April';  % 'Jan', 'April', 'Sept'\n")
+cat("scenario_trend = 'Stable';  % 'Increase', 'Stable', 'Decrease'\n")
+cat("april_weather = 'warm';  % 'cold', 'warm'\n\n")
+
+################################################################################
+# END OF SCRIPT
+################################################################################
+
+cat("\n========== COMPLETE ==========\n")
+cat("All scenario parameter files created!\n")
+cat("Ready for MATLAB MDP analysis\n\n")
