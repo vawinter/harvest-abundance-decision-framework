@@ -131,7 +131,7 @@ Results demonstrate utility improvements from delayed decisions, balanced agains
 
 ## About
 
-Code to implement the analysis described in Winter et al. (20XX) "A Decision Framework for Balancing Hunting Opportunity and Population Abundance in Wild Turkey Management"
+Code to implement the analysis described in Winter et al. (20XX) "A Decision Framework for Balancing Hunting Opportunity and Population Abundance: A Case Study for Wild Turkey Management"
 
 **Authors:** Veronica A. Winter, Duane R. Diefenbach, Mary Jo Casalena, Alexander R. Caraynoff, Andrew J. Mowen, Frances E. Buderman
 
