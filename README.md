@@ -1,4 +1,4 @@
-# A Decision Framework for Balancing Hunting Opportunity and Population Abundance in Wild Turkey Management
+# A Decision Framework for Balancing Hunting Opportunity and Population Abundance: A Case Study of Wild Turkey Management
 
 ## Overview
 
