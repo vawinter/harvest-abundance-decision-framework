@@ -101,18 +101,31 @@ Rscript 00_data_prep/04_predict_recruitment_from_weather.R
 Rscript 00_data_prep/05_fit_weather_recruitment_model.R
 Rscript 00_data_prep/06_generate_april_predictions.R
 
-# 1. Hunter preferences
+# 1. Hunter preferences (run in order 01-02)
 Rscript 01_prep_choice_model/01_visualize_choice_model.R
 Rscript 01_prep_choice_model/02_calculate_utility_weights.R
 
-# 2. Population parameters (run in order 00-07)
+# 2. Population parameters (07)
 Rscript 02_prep_population_parameters/07_create_population_scenarios.R
 
 # 3. Decision model (MATLAB)
 % In MATLAB:
 cd 03_MDP_execution
-run('01_main_decision_model.m')
-run('04_calculate_VOI.m')
+run('08_decision_model.m')
+run('09_calculate_VOI.m')
+
+# 4. Output Formatting (MATLAB)
+% In MATLAB:
+cd 04_output_formatting/
+run('10_FormattingMatLabPlots_JanApril.m')
+run('11_FormattingMatLabPlots_September.m')
+
+# 5. Mismatch Analysis (MATLAB)
+% In MATLAB:
+cd 05_mismatch/
+run('12_mismatch.m')
+run('13_mismatch_truth_comparison.m')
+run('14_mismatch_truth_visual.m')
 ```
 
 ---
