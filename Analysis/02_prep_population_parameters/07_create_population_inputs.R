@@ -46,9 +46,10 @@ region_params <- read.csv('Data/region_parameters_for_mdp.csv')
 # Calculate median Pbar across all PA WMU regions
 # This represents "average" or "stable" conditions
 Pbar_stable_base <- median(region_params$Pbar, na.rm = TRUE)
+range(region_params$Pbar)
 
 cat("Observed Pbar values across regions:\n")
-print(region_params %>% select(WMU_Group, Pbar))
+print(region_params %>% select(Region, Pbar))
 
 cat("\nMedian Pbar (STABLE baseline):", round(Pbar_stable_base, 3), "\n")
 
@@ -59,24 +60,27 @@ cat("\nMedian Pbar (STABLE baseline):", round(Pbar_stable_base, 3), "\n")
 cat("\n========== CREATING POPULATION TREND SCENARIOS ==========\n")
 
 # Stable = median observed (baseline)
-Pbar_stable <- Pbar_stable_base
+# Because median density is high, reducing the baseline to a range that matches 
+# more with the literature
+Pbar_stable <- 1.8
 
 # Increase = +10% from stable (favorable reproduction)
-Pbar_increase <- Pbar_stable_base * 1.10
+Pbar_increase <- Pbar_stable + (Pbar_stable * 0.10)
 
 # Decrease = -10% from stable (poor reproduction)
-Pbar_decrease <- Pbar_stable_base * 0.90
+Pbar_decrease <- Pbar_stable - (Pbar_stable * 0.10)
 
 cat("Population trend scenarios (±10% from median):\n")
 cat("  Stable (baseline):", round(Pbar_stable, 3), "\n")
-cat("  Increase (+10%):", round(Pbar_increase, 3), "\n")
-cat("  Decrease (-10%):", round(Pbar_decrease, 3), "\n")
+cat("  Increase (+18%):", round(Pbar_increase, 3), "\n")
+cat("  Decrease (-18%):", round(Pbar_decrease, 3), "\n")
 
 # Similarly adjust Fbar (female density at inflection)
 Fbar_stable_base <- median(region_params$Fbar, na.rm = TRUE)
-Fbar_stable <- Fbar_stable_base
-Fbar_increase <- Fbar_stable_base * 1.10
-Fbar_decrease <- Fbar_stable_base * 0.90
+# Since Fbar has a wide range, choose value that would coincide with PBar = 1.8
+Fbar_stable <- 2.5
+Fbar_increase <- Fbar_stable + (Fbar_stable * 0.10)
+Fbar_decrease <- Fbar_stable - (Fbar_stable * 0.10)
 
 cat("\nFemale density at inflection (Fbar):\n")
 cat("  Stable:", round(Fbar_stable, 3), "\n")
@@ -109,7 +113,7 @@ m.refined.ph <- glmmTMB(ph_formula, data = ph_train,
 temp_coef <- fixef(m.refined.ph)$cond["scale_avg_temperature"]
 
 cat("Temperature effect on PPB:", round(temp_coef, 4), "\n")
-
+# Temperature effect on PPB: 0.0427
 ################################################################################
 # 4. DEFINE TEMPERATURE SCENARIOS FOR APRIL
 ################################################################################
@@ -226,88 +230,9 @@ cat("\n========== CREATING PARAMETER FILES FOR MDP ==========\n")
 # Load other required parameters
 params <- readRDS("Data/LogisticGrowthModParams_2023.rds")
 
-# Load density data
-if (file.exists("Analysis/02_prep_population_parameters/01_extract_density_from_IPM.R")) {
-  source("Analysis/02_prep_population_parameters/01_extract_density_from_IPM.R")
-  k_density <- abundance_fall %>% select(WMU_Group, total)
-} else {
-  stop("ERROR: Cannot find density script")
-}
-
-# Prepare parameter data frame
-params_df <- as.data.frame(params) %>% 
-  mutate(WMU_Group = rownames(params)) %>% 
-  left_join(k_density, by = "WMU_Group") %>% 
-  rename(K_density = total)
-
-# Fill missing values
-params_df$K_density <- ifelse(is.na(params_df$K_density), 
-                              mean(params_df$K_density, na.rm = TRUE), 
-                              params_df$K_density)
-
-# Calculate scaling factors
-params_df <- params_df %>%
-  mutate(
-    scaling_factor = K_density / K,
-    N_star = (K / 2) * scaling_factor,
-    Region = WMU_Group
-  )
-
-# Function to create parameter CSV for a specific scenario
-create_scenario_csv <- function(pbar_value, fbar_value, scenario_name) {
-  
-  # Create region-specific parameters with scenario Pbar
-  df <- params_df %>%
-    mutate(
-      Fbar = fbar_value,  # Same for all regions in scenario
-      Pbar = pbar_value,  # Same for all regions in scenario
-      slope = r,
-      K_density = K_density
-    ) %>%
-    select(WMU_Group, Fbar, Pbar, slope, K_density) %>%
-    filter(!WMU_Group == "Group 10")  # Exclude insufficient data group
-  
-  # Save CSV
-  filename <- paste0("Data/mdp_params_", scenario_name, ".csv")
-  write.csv(df, filename, row.names = FALSE)
-  
-  cat("✓ Saved:", filename, "\n")
-  return(df)
-}
-
-# Create parameter files for each scenario
-# January/September (no weather info)
-create_scenario_csv(Pbar_decrease, Fbar_decrease, "jan_sept_decrease")
-create_scenario_csv(Pbar_stable, Fbar_stable, "jan_sept_stable")
-create_scenario_csv(Pbar_increase, Fbar_increase, "jan_sept_increase")
-
-# April Cold
-create_scenario_csv(Pbar_decrease_cold, Fbar_decrease, "april_cold_decrease")
-create_scenario_csv(Pbar_stable_cold, Fbar_stable, "april_cold_stable")
-create_scenario_csv(Pbar_increase_cold, Fbar_increase, "april_cold_increase")
-
-# April Warm
-create_scenario_csv(Pbar_decrease_warm, Fbar_decrease, "april_warm_decrease")
-create_scenario_csv(Pbar_stable_warm, Fbar_stable, "april_warm_stable")
-create_scenario_csv(Pbar_increase_warm, Fbar_increase, "april_warm_increase")
-
-################################################################################
-# 9. USAGE IN MATLAB
-################################################################################
-
-cat("\n========== MATLAB USAGE ==========\n")
-cat("In your MATLAB script, load parameters based on scenario:\n\n")
-
-cat("% Example for April cold spring, stable population:\n")
-cat("params = readtable('Data/mdp_params_april_cold_stable.csv');\n")
-cat("Fbar = params.Fbar(1);  % Same for all regions\n")
-cat("Pbar = params.Pbar(1);  % Same for all regions\n")
-cat("slope = params.slope(1);  % Region 1 slope\n\n")
-
-cat("% Or set directly based on decision point and scenario:\n")
-cat("scenario_month = 'April';  % 'Jan', 'April', 'Sept'\n")
-cat("scenario_trend = 'Stable';  % 'Increase', 'Stable', 'Decrease'\n")
-cat("april_weather = 'warm';  % 'cold', 'warm'\n\n")
+# Set slope to be the same in all scenarios
+range(params$r)
+# Slope will be 0.2
 
 ################################################################################
 # END OF SCRIPT

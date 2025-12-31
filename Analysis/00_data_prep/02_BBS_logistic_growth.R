@@ -41,7 +41,7 @@ library(nlme)
 
 # Load density-dependent fecundity function
 # This calculates poults per hen (PPH) as a function of female density
-source("xx_pph_density_fun.R")
+source("Analysis/00_data_prep/xx_pph_density_fun.R")
 
 ################################################################################
 # 2. CREATE CUSTOM WMU STRATIFICATION
@@ -175,9 +175,10 @@ saveRDS(final_indices, "Data/BBS-WMU_group.rds")
 # Prepare data for logistic growth modeling
 pa_data <- final_indices %>% 
   filter(!region %in% "continent") %>% 
-  rename(WMU_Group = region) %>% 
+  rename(Region = region) %>% 
+  mutate(Region = gsub("Group", "Region", Region)) %>% 
   # Remove groups with insufficient data
-  group_by(WMU_Group) %>%
+  group_by(Region) %>%
   filter(n() >= 10) %>%  # Need at least 10 years
   ungroup() %>%
   # Create time variables
@@ -185,10 +186,10 @@ pa_data <- final_indices %>%
     Years = year - min(year),
     Years_Centered = Years - mean(Years)
   ) %>% 
-  select(index, WMU_Group, Years, Years_Centered) %>%
+  select(index, Region, Years, Years_Centered) %>%
   rename(Index = index)
 
-message(paste("Modeling", length(unique(pa_data$WMU_Group)), "WMU groups"))
+message(paste("Modeling", length(unique(pa_data$Region)), "Regions"))
 
 # Logistic growth model: N(t) = K / (1 + exp(-r * t))
 # K = carrying capacity, r = intrinsic growth rate
@@ -208,7 +209,7 @@ logistic_mixed_model <- nlme(
   Index ~ K / (1 + exp(-r * Years_Centered)),
   data = pa_data,
   fixed = K + r ~ 1,
-  random = K + r ~ 1 | WMU_Group,
+  random = K + r ~ 1 | Region,
   start = list(fixed = coef(logistic_nls)),
   control = nlmeControl(msMaxEval = 2000, pnlsMaxIter = 100)
 )
@@ -238,27 +239,17 @@ saveRDS(params, "Data/LogisticGrowthModParams_2023.rds")
 
 # Load density data from IPM (from 01_extract_density_from_IPM.R)
 # This provides the scaling factor to convert BBS indices to real densities
-
-if (file.exists("Analysis/01_extract_density_from_IPM.R")) {
-  message("Loading IPM density estimates...")
-  source("Analysis/01_extract_density_from_IPM.R")
+k_density <- abundance_fall %>% 
+  dplyr::select(WMU_Group, total) %>% 
+  rename(Region = WMU_Group)
   
-  k_density <- abundance_fall %>% 
-    select(WMU_Group, total)
-  
-  hwb_ratio <- hwb_overall$total
-  ppb_value <- ppb_overall$total
-  
-} else {
-  stop("ERROR: Cannot find density estimation script. Run 01_extract_density_from_IPM.R first.")
-}
-
-message("Scaling BBS indices to absolute densities...")
+hwb_ratio <- hwb_overall$total
+ppb_value <- ppb_overall$total
 
 # Join logistic parameters with density data
 params_df <- as.data.frame(params) %>% 
-  mutate(WMU_Group = rownames(params)) %>% 
-  left_join(k_density, by = "WMU_Group") %>% 
+  mutate(Region = rownames(params)) %>% 
+  left_join(k_density, by = "Region") %>% 
   rename(K_density = total)
 
 # Fill missing values with mean (conservative approach)
@@ -282,9 +273,6 @@ params_df <- params_df %>%
     # Poult density at inflection (P̄)
     # P̄ = ppb × hen-with-brood ratio
     Pbar = ppb * hwb_ratio,
-    
-    # Region name for clarity
-    Region = WMU_Group
   )
 
 # Save complete parameters
@@ -308,7 +296,7 @@ pph_curves <- data.frame()
 
 for (i in 1:nrow(params_df)) {
   region_curve <- data.frame(
-    WMU_Group = params_df$WMU_Group[i],
+    Region = params_df$Region[i],
     female_density = density_seq,
     pph = calculate_pph(
       female_density = density_seq,
@@ -329,7 +317,7 @@ message("Creating region-specific parameter sets for decision model...")
 regionParams <- list()
 
 for (i in 1:nrow(params_df)) {
-  region_name <- params_df$WMU_Group[i]
+  region_name <- params_df$Region[i]
   regionParams[[region_name]] <- list(
     Fbar = params_df$N_star[i],      # F̄: Female density at inflection
     Pbar = params_df$Pbar[i],        # P̄: Poults per hen at inflection
@@ -339,23 +327,23 @@ for (i in 1:nrow(params_df)) {
 }
 
 # Exclude Group 10 if insufficient data
-regionParams <- regionParams[!names(regionParams) %in% "Group 10"]
+regionParams <- regionParams[!names(regionParams) %in% "Region 10"]
 
 # Save as RDS for R
 saveRDS(regionParams, "Data/region_parameters_for_mdp.rds")
 
 # Create CSV version for MATLAB
 region_params_df <- do.call(rbind, lapply(names(regionParams), function(region) {
-  params <- regionParams[[region]]
+  params <- regionParams[[region]] 
   data.frame(
-    WMU_Group = region,
+    Region = region,  # Changed from Region
     Fbar = params$Fbar,
     Pbar = params$Pbar,
     slope = round(params$slope, 2),
     K_density = params$K_density
   )
 })) %>%
-  filter(!WMU_Group == "Region 10")
+  filter(!Region == "Region 10")
 
 write.csv(region_params_df, "Data/region_parameters_for_mdp.csv", row.names = FALSE)
 
@@ -371,8 +359,8 @@ message("Creating visualizations...")
 
 # Scale BBS data to density units for plotting
 pa_data_scaled <- pa_data %>%
-  left_join(params_df %>% select(WMU_Group, scaling_factor), 
-            by = "WMU_Group") %>%
+  left_join(params_df %>% select(Region, scaling_factor), 
+            by = "Region") %>%
   mutate(Density = Index * scaling_factor)
 
 # Scale predictions
@@ -386,15 +374,15 @@ pa_data_scaled$Year <- pa_data_scaled$Years + min_year
 #------------------------------------------------------------------------------
 # Plot 1: Population density over time
 #------------------------------------------------------------------------------
-DD_scaled <- ggplot(pa_data_scaled, aes(x = Year, y = Density, color = WMU_Group)) +
+DD_scaled <- ggplot(pa_data_scaled, aes(x = Year, y = Density, color = Region)) +
   geom_point(alpha = 0.5) +
   geom_line(aes(y = predictions_scaled), linewidth = 1) +
-  geom_hline(data = params_df, aes(yintercept = K_density, color = WMU_Group),
+  geom_hline(data = params_df, aes(yintercept = K_density, color = Region),
              linetype = "dashed", alpha = 0.5) +
   labs(title = "Wild Turkey Population Density Over Time",
        y = expression("Female Density (birds/km"^2*")"), 
        x = "Year",
-       color = "WMU Group") +
+       color = "Region") +
   theme_classic() +
   theme(axis.title = element_text(size = 14),
         axis.text = element_text(size = 12),
@@ -404,14 +392,14 @@ DD_scaled <- ggplot(pa_data_scaled, aes(x = Year, y = Density, color = WMU_Group
 #------------------------------------------------------------------------------
 # Plot 2: Density-dependent reproduction curves
 #------------------------------------------------------------------------------
-pph_plot <- ggplot(pph_curves, aes(x = female_density, y = pph, color = WMU_Group)) +
+pph_plot <- ggplot(pph_curves, aes(x = female_density, y = pph, color = Region)) +
   geom_line(linewidth = 1) +
   # Mark inflection points
   geom_point(data = params_df, aes(x = N_star, y = Pbar), size = 3) +
   labs(title = "Density-Dependent Reproduction",
        y = "Poults Per Hen", 
        x = expression("Female Density (birds/km"^2*")"),
-       color = "WMU Group") +
+       color = "Region") +
   theme_classic() +
   theme(axis.title = element_text(size = 14),
         axis.text = element_text(size = 12),
@@ -422,11 +410,11 @@ pph_plot <- ggplot(pph_curves, aes(x = female_density, y = pph, color = WMU_Grou
 # Plot 3: Standardized curves for comparison
 #------------------------------------------------------------------------------
 standardized_curves <- pph_curves %>%
-  group_by(WMU_Group) %>%
+  group_by(Region) %>%
   mutate(
     # Standardize density relative to carrying capacity
     std_density = female_density / 
-      params_df$K_density[params_df$WMU_Group == WMU_Group[1]],
+      params_df$K_density[params_df$Region == Region[1]],
     # Standardize PPH relative to maximum
     std_pph = pph / max(pph, na.rm = TRUE)
   ) %>%
@@ -434,7 +422,7 @@ standardized_curves <- pph_curves %>%
 
 combined_plot <- ggplot() +
   geom_line(data = standardized_curves, 
-            aes(x = std_density, y = std_pph, color = WMU_Group),
+            aes(x = std_density, y = std_pph, color = Region),
             linewidth = 1) +
   # Reference lines at inflection (0.5, 0.5)
   geom_vline(xintercept = 0.5, linetype = "dotted", color = "gray50") +
@@ -442,7 +430,7 @@ combined_plot <- ggplot() +
   labs(title = "Standardized Density-Dependent Relationships",
        x = "Relative Female Density (proportion of K)",
        y = "Relative Reproductive Output",
-       color = "WMU Group") +
+       color = "Region") +
   scale_x_continuous(limits = c(0, 1.5), breaks = seq(0, 1.5, 0.25)) +
   scale_y_continuous(limits = c(0, 1.1), breaks = seq(0, 1, 0.2)) +
   theme_classic() +
@@ -490,10 +478,10 @@ param_text <- paste0(
 
 writeLines(param_text, "Dataviz/model_parameters_summary.txt")
 
-message("\n✓ Analysis complete!")
-message("✓ Parameters saved to: Data/region_parameters_for_mdp.csv")
-message("✓ Plots saved to: Dataviz/")
-message("✓ Summary text saved to: Data/model_parameters_summary.txt")
+message("\n Analysis complete!")
+message("Parameters saved to: Data/region_parameters_for_mdp.csv")
+message("Plots saved to: Dataviz/")
+message("Summary text saved to: Data/model_parameters_summary.txt")
 
 ################################################################################
 # END OF SCRIPT

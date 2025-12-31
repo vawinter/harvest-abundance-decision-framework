@@ -17,6 +17,8 @@
 # Author: Veronica A. Winter
 # Date: December 2025
 ################################################################################
+rm(list=ls())
+gc()
 
 library(dplyr)
 
@@ -65,9 +67,9 @@ abundance_fall <- x %>%
   reframe(total = sum(density_value)) %>% 
   arrange(WMU_Group)
 
-# Median female density across all WMU regions
+# Median female density across all regions
 median(abundance_fall$total)
-# Result: 9.4 females per unit area
+# Result: 1.68 females per km^2
 
 ################################################################################
 # 4. Extract Poults Per Brood (ppb)
@@ -88,7 +90,9 @@ ppb_overall <- ppb %>%
   reframe(total = sum(median_value)) %>% 
   filter(year == "2024")
 
-# Result: 4.1 poults per brood (by WMU)
+median(ppb_overall$total)
+
+# Result: 3.75 poults per brood
 
 ################################################################################
 # 5. Extract Hen-With-Brood Ratio (hwb)
@@ -110,7 +114,8 @@ hwb_overall <- hwb %>%
   reframe(total = sum(median_value)) %>% 
   filter(year == "2024")
 
-# Result: 0.79 hen-with-brood ratio (by WMU)
+median(hwb_overall$total)
+# Result: 0.77 hen-with-brood ratio (by WMU)
 
 ################################################################################
 # Notes for Next Steps

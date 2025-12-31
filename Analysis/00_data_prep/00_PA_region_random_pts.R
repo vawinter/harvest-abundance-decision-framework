@@ -114,9 +114,9 @@ cat("\nTotal points generated:", nrow(group_pts), "\n")
 ################################################################################
 
 # Save as RDS for use in weather download script
-saveRDS(group_pts, "../turkey_SDP/Data/WMUgroup_pts.rds")
+saveRDS(group_pts, "Data/PA_GIS/WMUgroup_pts.rds")
 
-cat("✓ Points saved to: ../turkey_SDP/Data/WMUgroup_pts.rds\n")
+cat("Points saved to: Data/PA_GIS/WMUgroup_pts.rds\n")
 
 ################################################################################
 # 4. VISUALIZE SAMPLING POINT DISTRIBUTION
@@ -141,7 +141,8 @@ sampling_map <- ggplot() +
   geom_sf(data = group_pts_sf, 
           aes(color = Group), 
           size = 1.5,
-          alpha = 0.6) +
+          alpha = 0.6,
+          show.legend = F) +
   # Labels and formatting
   labs(
     title = "Weather Sampling Points by WMU Region",
@@ -169,7 +170,7 @@ ggsave("Dataviz/weather_sampling_points_map.png",
        dpi = 300,
        bg = "white")
 
-cat("✓ Map saved to: Dataviz/weather_sampling_points_map.png\n")
+cat("Map saved to: Dataviz/weather_sampling_points_map.png\n")
 
 ################################################################################
 # 5. PRINT SUMMARY STATISTICS

@@ -16,6 +16,8 @@
 #         Veronica A. Winter (modifications)
 # Date: May 2025
 ################################################################################
+rm(list=ls())
+gc()
 
 library(brglm2)
 library(dplyr)
@@ -29,7 +31,7 @@ library(ggplot2)
 # Response.Indicator: 1 if option was chosen, 0 otherwise
 # Population.Size: 1=Decrease, 2=Stable, 3=Increase
 # Season.Length: Number of weeks (0, 1, 2, or 3)
-df <- read.csv("2024 Fall Turkey Choice Model Dataset - Veronica Model - arc 5.22.2025 CSV.csv")
+df <- read.csv("Data/2024 Fall Turkey Choice Model Dataset.csv")
 
 ################################################################################
 # 2. Recode Variables
@@ -83,7 +85,7 @@ ggplot(data = out) +
         axis.title = element_text(size = 12),
         legend.title = element_text(size = 11),
         legend.text = element_text(size = 10)) +
-  scale_y_continuous(limits = c(0, 0.5), breaks = seq(0, 0.5, 0.1))
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1))
 
 ################################################################################
 # 5. Key Findings
@@ -94,6 +96,6 @@ ggplot(data = out) +
 # - Under stable populations: Moderate preference for 2-3 week seasons
 # - Under increasing populations: Strong preference for 3-week seasons
 #
-# These preferences are converted to utility weights in:
+# These preferences are expanded in:
 #   02_calculate_preferences.R
 ################################################################################

@@ -6,12 +6,12 @@
 #          for use in the Markov Decision Process model. Creates three scenarios
 #          reflecting uncertainty in hunter preferences under declining populations.
 #
-# Input:  2024 Fall Turkey Choice Model Dataset - Veronica Model - arc 5.22.2025 CSV.csv
+# Input:  2024 Fall Turkey Choice Model Dataset.csv
 #         (Raw choice experiment data)
 #
-# Output: norm_weights_popsize_scenario_A.csv (Even split: 0 vs 1 week)
-#         norm_weights_popsize_scenario_B.csv (3:1 prefer ≥1 week)
-#         norm_weights_popsize_scenario_C.csv (Unanimous closure)
+# Output: hunter_preference_popsize_scenario_A.csv (Even split: 0 vs 1 week)
+#         hunter_preference_popsize_scenario_B.csv (3:1 prefer ≥1 week)
+#         nhunter_preference_popsize_scenario_C.csv (Unanimous closure)
 #
 # Author: Veronica A. Winter
 # Date: December 2025
@@ -28,10 +28,13 @@ library(cowplot)
 ################################################################################
 # 1. SET SCENARIO AND VISUALIZATION PARAMETERS
 ################################################################################
-
+# A: Even split closed vs 1-week season
+# B: 3:1 1-week vs closed season
+# C: closed season season
+ 
 # Which scenario to calculate
 # Options: "A", "B", or "C"
-scenario <- "B"
+scenario <- "C"
 
 # Color scheme for consistent visualization across season lengths
 length_colors <- c("0" = "#e41a1c",  # Red (closed season)
@@ -44,7 +47,7 @@ length_colors <- c("0" = "#e41a1c",  # Red (closed season)
 ################################################################################
 
 # Load raw choice experiment data
-df <- read.csv("Data/2024 Fall Turkey Choice Model Dataset - Veronica Model - arc 5.22.2025 CSV.csv")
+df <- read.csv("Data/2024 Fall Turkey Choice Model Dataset.csv")
 
 # Convert variables to factors
 df$Season.Length <- as.factor(df$Season.Length)
@@ -118,13 +121,13 @@ out_full <- full_data %>%
     
     # Scenario B: 3:1 ratio favoring at least 1 week
     # Reflects strong hunting tradition even during decline
-    Population.Size == "Decrease" & Season.Length == "0" ~ 0.3,
-    Population.Size == "Decrease" & Season.Length == "1" ~ 0.6,
+    # Population.Size == "Decrease" & Season.Length == "0" ~ 0.3,
+    # Population.Size == "Decrease" & Season.Length == "1" ~ 0.6,
     
     # Scenario C: Strong preference for closure
     # Reflects high conservation priority
-    # Population.Size == "Decrease" & Season.Length == "0" ~ 0.8,
-    # Population.Size == "Decrease" & Season.Length == "1" ~ 0.3,
+    Population.Size == "Decrease" & Season.Length == "0" ~ 0.8,
+    Population.Size == "Decrease" & Season.Length == "1" ~ 0.3,
     
     # ==== STABLE AND INCREASING POPULATIONS (same across scenarios) ====
     
@@ -236,27 +239,27 @@ plot_normalized <- ggplot(data = out_norm) +
 plot_grid(plot_filled, plot_normalized, ncol = 2)
 
 ################################################################################
-# 6. SAVE NORMALIZED WEIGHTS FOR MDP MODEL
+# 6. SAVE NORMALIZED Hunter Preference Adjustments FOR MDP MODEL
 ################################################################################
 
 # Save to CSV for use in MATLAB decision model
-output_file <- paste0("Data/norm_weights_popsize_scenario_", scenario, ".csv")
+output_file <- paste0("Data/hunter_preference_popsize_scenario_", scenario, ".csv")
 write.csv(out_norm, output_file, row.names = FALSE)
 
-cat("\nNormalized weights saved to:", output_file, "\n")
+cat("\n Preference adjustments saved to:", output_file, "\n")
 
 ################################################################################
 # 7. COMPARE ALL THREE SCENARIOS (OPTIONAL)
 ################################################################################
 
 # Read all three scenario files
-out_normA <- read.csv("Data/norm_weights_popsize_scenario_A.csv") %>% 
+out_normA <- read.csv("Data/hunter_preference_popsize_scenario_A.csv") %>% 
   arrange(Population.Size)
 
-out_normB <- read.csv("Data/norm_weights_popsize_scenario_B.csv") %>% 
+out_normB <- read.csv("Data/hunter_preference_popsize_scenario_B.csv") %>% 
   arrange(Population.Size)
 
-out_normC <- read.csv("Data/norm_weights_popsize_scenario_C.csv") %>% 
+out_normC <- read.csv("Data/hunter_preference_popsize_scenario_C.csv") %>% 
   arrange(Population.Size)
 
 # Combine all scenarios for comparison
@@ -297,7 +300,7 @@ table_publication <- kable(
 print(table_publication)
 
 # Save combined table
-write.csv(combined, "Data/manuscript_weights_table.csv", row.names = FALSE)
+write.csv(combined, "Dataviz/manuscript_hunter_preference_table.csv", row.names = FALSE)
 
 # Copy to clipboard for Word (optional - requires clipr package)
 # library(clipr)
