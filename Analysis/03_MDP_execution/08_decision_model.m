@@ -13,7 +13,7 @@
 clear; clc;
 
 % Add MDPSolve path
-addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/PhD/PSUTurkey/turkey_SDP/'))
+addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/PhD/Manuscript/harvest-abundance-decision-framework/'))
 
 % **USER OPTIONS**
 save_plots = false;  % Set to false to skip saving plots

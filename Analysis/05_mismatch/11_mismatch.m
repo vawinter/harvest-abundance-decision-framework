@@ -17,7 +17,7 @@
 clear; clc;
 
 % Add MDPSolve path
-addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/PhD/PSUTurkey/turkey_SDP/'))
+addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/PhD/Manuscripts/harvest-abundance-decision-framework/'))
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% USER OPTIONS
