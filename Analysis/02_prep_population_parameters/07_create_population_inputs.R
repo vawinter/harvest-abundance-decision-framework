@@ -41,7 +41,7 @@ cat("\n========== CALCULATING BASELINE PBAR ==========\n")
 
 # Load observed Pbar values from BBS analysis (script 02)
 # These are empirically-derived inflection point parameters
-region_params <- read.csv('Data/region_parameters_for_mdp.csv')
+region_params <- readRDS('Data/region_parameters_for_mdp.rds')
 
 # Calculate median Pbar across all PA WMU regions
 # This represents "average" or "stable" conditions

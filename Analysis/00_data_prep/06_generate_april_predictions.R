@@ -107,20 +107,12 @@ print(mean_april_ppb)
 
 cat("\n========== LOADING ADDITIONAL PARAMETERS ==========\n")
 
-# Load density estimates from IPM
-if (file.exists("Analysis/01_extract_density_from_IPM.R")) {
-  message("Loading IPM density estimates...")
-  source("Analysis/01_extract_density_from_IPM.R")
-  
-  k_density <- abundance_fall %>% 
+# Load density estimates from IPM '01_extract_density_from_IPM.R'
+k_density <- abundance_fall %>% 
     select(WMU_Group, total)
   
-  hwb_ratio <- hwb_overall$total  # Hen-with-brood ratio
-  ppb_value <- mean_april_ppb$PPB  # April-predicted PPB
-  
-} else {
-  stop("ERROR: Cannot find density estimation script.")
-}
+hwb_ratio <- hwb_overall$total  # Hen-with-brood ratio
+ppb_value <- mean_april_ppb$PPB  # April-predicted PPB
 
 cat("Parameters loaded:\n")
 cat("  HWB ratio:", round(mean(hwb_ratio), 3), "\n")
