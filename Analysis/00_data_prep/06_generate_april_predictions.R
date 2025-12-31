@@ -55,10 +55,6 @@ cat("  Date range:", min(april23_weather_df$date), "to", max(april23_weather_df$
 
 cat("\n========== FITTING PPB MODEL ==========\n")
 
-# Specify weather data to use
-month <- "april"
-scaled_weather <- readRDS(paste0("Data/Rec_data/", month, "_scaled_weather2.rds"))
-
 # Load observed PPB data
 ppb_df <- readRDS("Data/Rec_data/ph_df_aug31.rds")
 

@@ -27,7 +27,7 @@ library(dplyr)
 ################################################################################
 
 # Load abundance summary from IPM (contains density estimates by sex, year, WMU)
-x <- readRDS("Data/IPM/O_24_abundance_summary.rds")
+x <- readRDS("Data/IPM/Winter_etal_IPM_abundance_summary.rds")
 head(x)
 
 ################################################################################
@@ -76,7 +76,7 @@ median(abundance_fall$total)
 ################################################################################
 
 # ppb represents reproductive output and is used in the fecundity function
-ppb <- readRDS("Data/IPM/O_24_ppb_summary.rds")
+ppb <- readRDS("Data/IPM/Winter_etal_IPM_ppb_summary.rds")
 
 ppb_overall <- ppb %>% 
   mutate(year = case_when(
@@ -100,7 +100,7 @@ median(ppb_overall$total)
 
 # hwb is the proportion of hens successfully raising broods
 # Combined with ppb, this gives poult density: P = F * hwb * ppb
-hwb <- readRDS("Data/IPM/O_24_hwb_summary.rds")
+hwb <- readRDS("Data/IPM/Winter_etal_IPM_hwb_summary.rds")
 
 hwb_overall <- hwb %>% 
   mutate(year = case_when(
