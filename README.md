@@ -129,25 +129,6 @@ run('14_mismatch_truth_visual.m')
 ```
 
 ---
-
-## Key Results
-
-### Value of Information (VOI)
-
-VOI quantifies utility gain from waiting for better information:
-- **VOI(April)** = U(April) - U(January)
-- **VOI(September)** = U(September) - U(April)
-
-Results demonstrate utility improvements from delayed decisions, balanced against logistical constraints of regulation changes.
-
----
-
-## About
-
-Code to implement the analysis described in Winter et al. (20XX) "A Decision Framework for Balancing Hunting Opportunity and Population Abundance: A Case Study for Wild Turkey Management"
-
-**Authors:** Veronica A. Winter, Duane R. Diefenbach, Mary Jo Casalena, Alexander R. Caraynoff, Andrew J. Mowen, Frances E. Buderman
-
 ## Contact
 
 Veronica A. Winter - vaw5154@psu.edu
