@@ -1,0 +1,13 @@
+"Population.Size","Season.Length","mn2","normalized_weights"
+"Decrease","0",0.4,0.34
+"Stable","0",0,0
+"Increase","0",0,0
+"Decrease","1",0.4,0.34
+"Stable","1",0.812816188870152,0.37
+"Increase","1",0.454749859471613,0.21
+"Decrease","2",0.216694772344013,0.18
+"Stable","2",0.686340640809443,0.31
+"Increase","2",0.836424957841484,0.39
+"Decrease","3",0.174536256323777,0.15
+"Stable","3",0.704890387858347,0.32
+"Increase","3",0.87,0.4
