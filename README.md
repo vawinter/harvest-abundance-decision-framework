@@ -59,31 +59,31 @@ Implements stochastic dynamic programming to determine optimal season lengths.
 
 ## Data Requirements
 
-### Input Data (not included in repository)
+### Input Data (included in repository)
 
 1. **Hunter preference survey**
-   - `2024 Fall Turkey Choice Model Dataset - Veronica Model - arc 5.22.2025 CSV.csv`
+   - `2024 Fall Turkey Choice Model Dataset.csv`
 
 2. **Integrated Population Model outputs** (Winter et al., in review)
-   - `O_24_abundance_summary.rds` - Density estimates
-   - `O_24_ppb_summary.rds` - Poults per brood
-   - `O_24_hwb_summary.rds` - Hen-with-brood ratios
+   - `IPM/Winter_etal_IPM_abundance_summary.rds` - Density estimates
+   - `IPM/Winter_etal_IPM_ppb_summary.rds` - Poults per brood
+   - `IPM/Winter_etal_IPM_hwb_summary.rds` - Hen-with-brood ratios
+   - `IPM/PA_sss.rds` - Summer Sighting Survey data from PA
 
 3. **BBS data**
    - Downloaded via `bbsBayes2::fetch_bbs_data()`
+   - `BBS-WMU_groups.rds` - BBS data for PA used in this workflow
 
-4. **Pennsylvania WMU boundaries**
-   - `PGC_BNDWildlifeManagementUnits2024.shp`
-
-5. **Nest timing data**
-   - `20250131_NestAttempts_allbirds.csv`
+4. **Weather data (April 2023)**
+   - `april23_scaled_weather.rds`
+   - `pph_df_aug31.rds`
 
 ### Generated Data Files
 
 Intermediate and final outputs saved to `Data/` subdirectories:
-- `norm_weights_popsize_scenario_*.csv` - Hunter preference weights
-- `region_parameters_for_mdp.csv` - BBS-derived parameters
-- `mdp_params_*.csv` - Scenario-specific parameters (9 files)
+- `Hunter_preference_popsize_scenario_*.csv` - Hunter preference weights
+- `LogisticGrowthModParams_2023` - Density dependence model for PA turkey
+- `region_parameters_for_mdp.rds` - BBS-derived parameters
 
 ---
 
