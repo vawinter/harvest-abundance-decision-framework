@@ -1,6 +1,6 @@
 ##############################################################################
-# Stitch Together Stable Population Plots - Grid Layout
-# Rows: January, April (warm), September
+# Stitch Together Population Plots - Grid Layout
+# Rows: January, April (Low), April (High), September
 # Columns: Scenario A, B, C
 ##############################################################################
 rm(list=ls())
@@ -12,21 +12,21 @@ library(dplyr)
 library(stringr)
 
 # Directory containing your PNG files
-input_dir <- "Results/"
+input_dir <- "Results/Utility_Results"
 output_dir <- "Stitched_Plots"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir)
 }
 
-trend <- "increase"
+trend <- "Stable"  # Options: "Increase", "Stable", "Decrease"
 
 ##############################################################################
-# Get all PNG files containing 'stable'
+# Get all PNG files containing the trend
 ##############################################################################
 all_files <- list.files(input_dir, pattern = "\\.png$", full.names = FALSE)
-trend_files <- all_files[str_detect(tolower(all_files), trend)]
+trend_files <- all_files[str_detect(all_files, trend)]
 
-cat(sprintf(paste("Found %d", trend, "files\n", sep = " "), length(trend_files)))
+cat(sprintf("Found %d %s files\n", length(trend_files), trend))
 
 ##############################################################################
 # Parse file information
@@ -37,6 +37,7 @@ file_info <- data.frame(
   scenario = character(),
   type = character(),
   weather = character(),
+  model_var = character(),
   stringsAsFactors = FALSE
 )
 
@@ -67,12 +68,22 @@ for (fname in trend_files) {
     TRUE ~ ""
   )
   
-  # Extract weather (only warm for April)
+  # Extract weather (for April)
   weather <- ""
   if (str_detect(fname, "April")) {
     weather <- case_when(
       str_detect(fname, "warm") ~ "warm",
       str_detect(fname, "cold") ~ "cold",
+      TRUE ~ ""
+    )
+  }
+  
+  # Extract model variation (for April)
+  model_var <- ""
+  if (str_detect(fname, "April")) {
+    model_var <- case_when(
+      str_detect(fname, "Low") ~ "Low",
+      str_detect(fname, "High") ~ "High",
       TRUE ~ ""
     )
   }
@@ -83,6 +94,7 @@ for (fname in trend_files) {
     scenario = scenario,
     type = plot_type,
     weather = weather,
+    model_var = model_var,
     stringsAsFactors = FALSE
   ))
 }
@@ -93,24 +105,40 @@ file_info <- file_info %>%
 
 cat(sprintf("Filtered to %d files (warm April only)\n", nrow(file_info)))
 
+# Print summary
+cat("\nFile summary:\n")
+print(file_info %>% 
+        group_by(month, model_var, type) %>% 
+        summarise(count = n(), .groups = "drop"))
+
 ##############################################################################
 # Helper function to create grid
 ##############################################################################
 create_grid <- function(files_df, plot_type_name) {
   
-  month_order <- c("January", "April", "September")
+  # Define row structure: 4 rows
+  rows_def <- list(
+    list(month = "January", label = "January", model_var = ""),
+    list(month = "April", label = "April (Low)", model_var = "Low"),
+    list(month = "April", label = "April (High)", model_var = "High"),
+    list(month = "September", label = "September", model_var = "")
+  )
+  
   scenarios <- c("A", "B", "C")
   
   # Create empty list for rows
   rows <- list()
   
-  for (mon in month_order) {
+  for (r in 1:length(rows_def)) {
+    row_def <- rows_def[[r]]
     row_images <- list()
     
     for (scen in scenarios) {
-      # Filter for this month and scenario
+      # Filter for this month, scenario, and model_var
       img_file <- files_df %>%
-        filter(month == mon, scenario == scen)
+        filter(month == row_def$month, 
+               scenario == scen,
+               (model_var == row_def$model_var | row_def$model_var == ""))
       
       if (nrow(img_file) > 0) {
         # Load image
@@ -122,7 +150,7 @@ create_grid <- function(files_df, plot_type_name) {
         img_height <- info$height
         
         # Add top margin for column headers (first row only)
-        if (mon == "January") {
+        if (r == 1) {
           img <- image_border(img, "white", geometry = "0x60x0x0")
           img <- image_annotate(img, paste0("Scenario ", scen),
                                 size = 55,
@@ -134,16 +162,16 @@ create_grid <- function(files_df, plot_type_name) {
         
         # Add left margin for row headers (first column only)
         if (scen == "A") {
-          img <- image_border(img, "white", geometry = "80x0x0x0")
-          month_label <- mon
-          img <- image_annotate(img, month_label,
-                                size = 55,
+          img <- image_border(img, "white", geometry = "120x0x0x0")
+          img <- image_annotate(img, row_def$label,
+                                size = 50,
                                 gravity = "west",
                                 color = "black",
                                 weight = 700,
-                                degrees = 270,  # Changed from 90 to 270
-                                location = "+25+0")
+                                degrees = 270,
+                                location = "+30+0")
         }
+        
         row_images[[length(row_images) + 1]] <- img
       } else {
         # Create blank placeholder if file missing
@@ -153,6 +181,9 @@ create_grid <- function(files_df, plot_type_name) {
                                 gravity = "center",
                                 color = "red")
         row_images[[length(row_images) + 1]] <- blank
+        
+        cat(sprintf("WARNING: Missing file for %s - Scenario %s - %s\n", 
+                    row_def$label, scen, plot_type_name))
       }
     }
     
@@ -163,16 +194,6 @@ create_grid <- function(files_df, plot_type_name) {
   
   # Stack all rows vertically
   grid <- image_append(do.call(c, rows), stack = TRUE)
-  
-  # Remove overall title - comment out these lines:
-  # grid <- image_border(grid, "white", "50x120x50x50")
-  # grid <- image_annotate(grid,
-  #                        paste0(plot_type_name, ": Stable Population"),
-  #                        size = 60,
-  #                        gravity = "north",
-  #                        color = "black",
-  #                        weight = 700,
-  #                        location = "+0+30")
   
   return(grid)
 }
@@ -188,10 +209,10 @@ if (nrow(action_files) > 0) {
   cat(sprintf("Using %d action files\n", nrow(action_files)))
   action_grid <- create_grid(action_files, "Action Plots")
   image_write(action_grid,
-              path = file.path(output_dir, paste0("action_",trend,"_grid.png")),
+              path = file.path(output_dir, paste0("action_", trend, "_grid.png")),
               density = 300)
   image_write(action_grid,
-              path = file.path(output_dir, paste0("action_",trend,"_grid.pdf")),
+              path = file.path(output_dir, paste0("action_", trend, "_grid.pdf")),
               format = "pdf")
   cat("Saved action plot grid\n")
 }
@@ -203,10 +224,10 @@ if (nrow(season_files) > 0) {
   cat(sprintf("Using %d season files\n", nrow(season_files)))
   season_grid <- create_grid(season_files, "Season Distribution")
   image_write(season_grid,
-              path = file.path(output_dir, paste0("season_",trend,"_grid.png")),
+              path = file.path(output_dir, paste0("season_", trend, "_grid.png")),
               density = 300)
   image_write(season_grid,
-              path = file.path(output_dir, paste0("season_",trend,"_grid.pdf")),
+              path = file.path(output_dir, paste0("season_", trend, "_grid.pdf")),
               format = "pdf")
   cat("Saved season plot grid\n")
 }
