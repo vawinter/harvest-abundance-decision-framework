@@ -1,6 +1,6 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%X
-%% A Decision Framework for Balancing Hunting Opportunity 
-% and Population Abundance in Wild Turkey Management
+%% A Decision Framework for Balancing Hunting Opportunity and Population Abundance: 
+% A Case Study for Wild Turkey Management
 % Winter et al. 20XX
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%X
 % Decision made at (January, April, September) time-point
@@ -13,10 +13,10 @@
 clear; clc;
 
 % Add MDPSolve path
-addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/PhD/Manuscript/harvest-abundance-decision-framework/'))
+addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/PhD/PSUTurkey/turkey_SDP/'))
 
 % **USER OPTIONS**
-save_plots = false;  % Set to false to skip saving plots
+save_plots = true;  % Set to false to skip saving plots
 save_results = true;  % Set to false to skip saving utility results
 
 % Create output directory
@@ -33,6 +33,7 @@ months = {'January', 'April', 'September'};
 trends = {'Increase', 'Stable', 'Decrease'};
 scenarios = {'A', 'B', 'C'};
 weathers = {'warm', 'cold'};  % Only used for April
+model_var = {'Low', 'High'};  % variation around april model
 
 % Fixed parameters
 omu = 12.998; % Unobserved mast
@@ -61,33 +62,38 @@ for m = 1:length(months)
     % Weather loop (only matters for April)
     if strcmp(scenario_month, 'April')
         weather_list = weathers;
+        var_list = model_var;  % Add variation scenarios for April
     else
         weather_list = {''};
+        var_list = {''};  % No variation scenarios for other months
     end
     
-    for w = 1:length(weather_list)
-        april_weather = weather_list{w};
-        
-        for t = 1:length(trends)
-            scenario_trend = trends{t};
+    for v = 1:length(var_list)
+        april_var = var_list{v};
+
+        for w = 1:length(weather_list)
+            april_weather = weather_list{w};
             
-            for s = 1:length(scenarios)
-                scenario_0 = scenarios{s};
+            for t = 1:length(trends)
+                scenario_trend = trends{t};
                 
-                % Create unique identifier
-                if strcmp(scenario_month, 'April')
-                    run_id = sprintf('%s_%s_%s_%s', scenario_month, april_weather, scenario_trend, scenario_0);
-                else
-                    run_id = sprintf('%s_%s_%s', scenario_month, scenario_trend, scenario_0);
-                end
-                
-                fprintf('\n========================================\n');
-                fprintf('Running: %s\n', run_id);
-                fprintf('========================================\n');
-                
-                try
+                for s = 1:length(scenarios)
+                    scenario_0 = scenarios{s};
+                    
+                    % Create unique identifier
+                    if strcmp(scenario_month, 'April')
+                        run_id = sprintf('%s_%s_%s_%s_%s', scenario_month, april_weather, april_var, scenario_trend, scenario_0);
+                    else
+                        run_id = sprintf('%s_%s_%s', scenario_month, scenario_trend, scenario_0);
+                    end
+                    
+                    fprintf('\n========================================\n');
+                    fprintf('Running: %s\n', run_id);
+                    fprintf('========================================\n');
+                    
+                    try
                     % Set parameters based on month and trend
-                    [Fbar, Pbar, osig, use_w] = setParameters(scenario_month, scenario_trend, april_weather);
+                    [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend, april_weather, april_var);
 
                     % Load utility weights
                     fname = sprintf('Data/norm_weights_popsize_scenario_%s.csv', scenario_0);
@@ -95,62 +101,67 @@ for m = 1:length(months)
                     row = T(strcmp(T.("Population.Size"), scenario_trend), :);
                     setGlobalWeights(row.normalized_weights);
                     
+                    % Determine use_w based on cvw
+                    use_w = (cvw > 0);  % true if cvw > 0, false if cvw = 0
+                    
                     % Run model
                     [model, results, mm, ES, ~, pp, F, J, M, ~, D, ~, ~] = ...
-                        PennTurkeyModel(uw_fixed, Fbar, Pbar, slope, osig, omu, use_w);
-                    
-                    % Run simulations for each season length
-                    [F_means, MJ_means] = runSimulations(D, L, reps, time_steps);
+                        PennTurkeyModel(uw_fixed, Fbar, Pbar, slope, osig, omu, use_w, cvw);
+                        
+                        % Run simulations for each season length
+                        [F_means, MJ_means] = runSimulations(D, L, reps, time_steps);
 
-                    % Save utility results if requested
-                    if save_results
-                        all_results(result_counter).run_id = run_id;
-                        all_results(result_counter).month = scenario_month;
-                        all_results(result_counter).trend = scenario_trend;
-                        all_results(result_counter).scenario = scenario_0;
-                        all_results(result_counter).weather = april_weather;
-                        all_results(result_counter).value_function = results.v;  % Full vector
-                        all_results(result_counter).stationary_dist = pp;  % If available
+                        % Save utility results if requested
+                        if save_results
+                            all_results(result_counter).run_id = run_id;
+                            all_results(result_counter).month = scenario_month;
+                            all_results(result_counter).trend = scenario_trend;
+                            all_results(result_counter).scenario = scenario_0;
+                            all_results(result_counter).weather = april_weather;
+                            all_results(result_counter).value_function = results.v;  % Full vector
+                            all_results(result_counter).stationary_dist = pp;  % If available
+                            all_results(result_counter).model_var = april_var;
 
-                        % Calculate expected utility at steady-state
-                        if ~isempty(ES) && length(ES) >= 4 && ~isempty(results.v)
-                            % Find state closest to expected steady-state
-                            distances = sqrt((model.X(:,2) - ES(2)).^2 + ...
-                                           (model.X(:,3) - ES(3)).^2 + ...
-                                           (model.X(:,4) - ES(4)).^2);
-                            [~, closest_idx] = min(distances);
-                            all_results(result_counter).expected_utility = results.v(closest_idx);
-                        elseif ~isempty(pp) && ~isempty(results.v)
-                            % Use long-run expected value from stationary distribution
-                            all_results(result_counter).expected_utility = pp' * results.v;
-                        elseif ~isempty(results.v)
-                            % Fallback: use mean value
-                            all_results(result_counter).expected_utility = mean(results.v);
-                        else
-                            warning('Could not calculate expected utility for %s', run_id);
-                            all_results(result_counter).expected_utility = NaN;
+                            % Calculate expected utility at steady-state
+                            if ~isempty(ES) && length(ES) >= 4 && ~isempty(results.v)
+                                % Find state closest to expected steady-state
+                                distances = sqrt((model.X(:,2) - ES(2)).^2 + ...
+                                            (model.X(:,3) - ES(3)).^2 + ...
+                                            (model.X(:,4) - ES(4)).^2);
+                                [~, closest_idx] = min(distances);
+                                all_results(result_counter).expected_utility = results.v(closest_idx);
+                            elseif ~isempty(pp) && ~isempty(results.v)
+                                % Use long-run expected value from stationary distribution
+                                all_results(result_counter).expected_utility = pp' * results.v;
+                            elseif ~isempty(results.v)
+                                % Fallback: use mean value
+                                all_results(result_counter).expected_utility = mean(results.v);
+                            else
+                                warning('Could not calculate expected utility for %s', run_id);
+                                all_results(result_counter).expected_utility = NaN;
+                            end
+                            
+                            all_results(result_counter).optimal_action = mode(model.X(results.Ixopt, 1));
+                            all_results(result_counter).F_means = F_means;
+                            all_results(result_counter).MJ_means = MJ_means;
+                            all_results(result_counter).ES = ES;
+                            result_counter = result_counter + 1;
                         end
                         
-                        all_results(result_counter).optimal_action = mode(model.X(results.Ixopt, 1));
-                        all_results(result_counter).F_means = F_means;
-                        all_results(result_counter).MJ_means = MJ_means;
-                        all_results(result_counter).ES = ES;
-                        result_counter = result_counter + 1;
+                        % Save plots if requested
+                        if save_plots
+                            savePlots(results, mm, ES, F, L, F_means, MJ_means, run_id, output_dir);
+                        end
+                        
+                    catch ME
+                        warning('Error in run %s: %s', run_id, ME.message);
+                        fprintf('Error details: %s\n', ME.getReport());
                     end
-                    
-                    % Save plots if requested
-                    if save_plots
-                        savePlots(results, mm, ES, F, L, F_means, MJ_means, run_id, output_dir);
-                    end
-                    
-                catch ME
-                    warning('Error in run %s: %s', run_id, ME.message);
-                    fprintf('Error details: %s\n', ME.getReport());
-                end
-            end
-        end
-    end
-end
+                end  % scenarios
+            end  % trends
+        end  % weather
+    end  % variation
+end  % monthsd
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Save all results to file if requested
@@ -159,7 +170,7 @@ if save_results && exist('all_results', 'var') && ~isempty(all_results)
     % Save full structure as MAT file (keeps arrays)
     save(fullfile(output_dir, 'all_utility_results.mat'), 'all_results');
     
-    % Create simplified structure for CSV (scalars only)
+   % Create simplified structure for CSV (scalars only)
     results_simple = struct();
     for i = 1:length(all_results)
         results_simple(i).run_id = all_results(i).run_id;
@@ -167,6 +178,7 @@ if save_results && exist('all_results', 'var') && ~isempty(all_results)
         results_simple(i).trend = all_results(i).trend;
         results_simple(i).scenario = all_results(i).scenario;
         results_simple(i).weather = all_results(i).weather;
+        results_simple(i).model_var = all_results(i).model_var;  % Add this line
         results_simple(i).expected_utility = all_results(i).expected_utility;
         results_simple(i).optimal_action = all_results(i).optimal_action;
     end
@@ -188,7 +200,7 @@ end
 %% Helper Functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function [Fbar, Pbar, osig, use_w] = setParameters(scenario_month, scenario_trend, april_weather)
+function [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend, april_weather, april_var)
     % Set Fbar and Pbar based on trend
     if strcmp(scenario_trend, 'Increase')
         Fbar = 2.75;
@@ -201,24 +213,33 @@ function [Fbar, Pbar, osig, use_w] = setParameters(scenario_month, scenario_tren
         Pbar_base = 1.62;
     end
     
-    % Adjust Pbar for April based on weather
-    if strcmp(scenario_month, 'April')
+    % Adjust Pbar for April and September based on weather
+    if strcmp(scenario_month, 'April') || strcmp(scenario_month, 'September')
         if strcmp(april_weather, 'cold')
             Pbar = Pbar_base - 0.035;
-        else  % warm
+        elseif strcmp(april_weather, 'warm')
             Pbar = Pbar_base + 0.039;
+        else
+            Pbar = Pbar_base;  % Default if weather not specified
         end
-    else
+    else  % January
         Pbar = Pbar_base;
     end
     
-    % Set osig and use_w based on month
+    % Set osig and cvw based on month
     if strcmp(scenario_month, 'September')
         osig = 1.0;
-        use_w = false;
-    else
+        cvw = 0;  % No variation - recruitment known
+    elseif strcmp(scenario_month, 'April')
         osig = 2.3;
-        use_w = true;
+        if strcmp(april_var, 'Low')
+            cvw = (1.116 / 4.96) * 0.5;  % Reduced variation for April 
+        else
+            cvw = (1.116 / 4.96) * 2;  % High variation for April 
+        end
+    else  % January
+        osig = 2.3;
+        cvw = 1.116 / 4.96;  % Full variation
     end
 end
 
@@ -339,7 +360,7 @@ function uw = getUtilityWeight(L)
 end
 
 % Dynamic model function
-function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = PennTurkeyModel(uw_fixed, Fbar, Pbar, slope, osig, omu, use_w)
+function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = PennTurkeyModel(uw_fixed, Fbar, Pbar, slope, osig, omu, use_w, cvw)
       %% Parameter Definitions and Adjustments
     addfactor = 0.1;
     
@@ -382,7 +403,8 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = PennTu
     
     % Coefficients of variation for survival rates
     cvv     = 0.0736;         % Summer survival variation
-    cvw     = 1.116 / 4.96;   % Variation for poults/hens survival
+    % cvw     = 1.116 / 4.96;   % Variation for poults/hens survival
+    % Note: cvw is passed as a parameter instead of being defined here
 
     % Fecundity shape parameter (derived from Fbar, slope, and Pbar)
     eta = 1 + 2 * Fbar * slope / Pbar;
@@ -430,7 +452,7 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = PennTu
     vparams = Burr3mom2param(1, cvv, 0);
     wparams = Burr3mom2param(1, cvw, 0);
     v = rvdef('burr3', vparams, 25);            % Summer survival
-     w = rvdef('burr3', wparams, 25);            % Poults per hen
+    w = rvdef('burr3', wparams, 25);            % Poults per hen
     
     %% Discretization of the State Variables
     minpop = 0.00;
