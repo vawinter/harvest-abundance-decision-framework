@@ -11,35 +11,27 @@
 % January:   Both recruitment and mast uncertain
 %            Recruitment = prior year estimate
 %            Mast = stochastic (mean = 12.998, SD = 3.684)
-%            CVw = 1.116 / 4.96 (baseline variation)
 %
 % April:     Recruitment predicted from weather models, mast uncertain
 %            Recruitment = weather-based prediction
 %            Mast = stochastic (mean = 12.998, SD = 3.684)
-%            CVw = Low (0.5x baseline) or High (2.0x baseline)
 %
 % September: Both recruitment and mast known from field observations
 %            Recruitment = observed from brood surveys
 %            Mast = observed from mast surveys
-%            CVw = 0 (known)
 %
 % VALUE OF INFORMATION METRICS:
 % ------------------------------
-% Jan → Apr: Value of improved recruitment predictions
-%            = U(April) - U(January)
-%            = Utility gain from weather-based recruitment forecasts
-%            = Calculated separately for Low and High model variation
+% Recruitment VOI: ΔU(Jan→Apr) = U(April) - U(January)
+%                  Utility gain from weather-based recruitment forecasts
 %
-% Jan → Sep: Expected Value of Perfect Information (EVPI)
-%            = U(September|mast) - U(January)
-%            = Value of resolving both uncertainties
-%            = Calculated separately for low, average, and high mast
+% Total VOI:       ΔU(Jan→Sept) = U(September|mast) - U(January)
+%                  Value of resolving both uncertainties
+%                  Calculated separately for low, average, and high mast
 %
-% Apr → Sep: Additional value of knowing actual conditions
-%            = U(September|mast) - U(April)
-%            = Value of knowing actual recruitment and mast vs predicted recruitment
-%            = Calculated separately for low, average, and high mast
-%            = Calculated separately for Low and High model variation
+% Mast VOI:        ΔU(Apr→Sept) = U(September|mast) - U(April)
+%                  Value of knowing actual recruitment and mast vs predicted recruitment
+%                  Calculated separately for low, average, and high mast
 %
 % Interpretation:
 % ---------------
@@ -96,7 +88,12 @@ fprintf('Unique months: %s\n', strjoin(unique(T_all.month), ', '));
 fprintf('Unique trends: %s\n', strjoin(unique(T_all.trend), ', '));
 fprintf('Unique scenarios: %s\n', strjoin(unique(T_all.scenario), ', '));
 fprintf('Unique mast conditions: %s\n', strjoin(unique(T_all.mast_condition), ', '));
-fprintf('Unique model variations: %s\n\n', strjoin(unique(T_all.model_var), ', '));
+
+% Check weather column for September
+if ismember('weather', T_all.Properties.VariableNames)
+    fprintf('Unique weather values: %s\n', strjoin(unique(T_all.weather), ', '));
+end
+fprintf('Unique model variations: %s\n\n', strjoin(unique(T_all.model_var(~strcmp(T_all.model_var, ''))), ', '));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Calculate VOI for each combination
@@ -104,269 +101,312 @@ fprintf('Unique model variations: %s\n\n', strjoin(unique(T_all.model_var), ', '
 trends = unique(T_all.trend);
 scenarios = unique(T_all.scenario);
 april_vars = {'Low', 'High'};
+weathers = {'warm', 'cold'};  % Add weather dimension
 
 results_voi = [];
+manuscript_table_rows = [];  % For simplified manuscript table
 
 for t = 1:length(trends)
     for s = 1:length(scenarios)
         for av = 1:length(april_vars)
-            trend = trends{t};
-            scenario = scenarios{s};
-            april_var = april_vars{av};
-            
-            fprintf('\n========================================\n');
-            fprintf('%s - Scenario %s - April Variation: %s\n', trend, scenario, april_var);
-            fprintf('========================================\n');
-            
-            % Get January utility (uses average mast = 12.998, stochastic)
-            idx_jan = strcmp(T_all.month, 'January') & ...
-                      strcmp(T_all.trend, trend) & ...
-                      strcmp(T_all.scenario, scenario) & ...
-                      strcmp(T_all.mast_condition, 'average');
-            
-            % Get April utility (uses average mast = 12.998, stochastic, specific variation)
-            idx_apr = strcmp(T_all.month, 'April') & ...
-                      strcmp(T_all.trend, trend) & ...
-                      strcmp(T_all.scenario, scenario) & ...
-                      strcmp(T_all.mast_condition, 'average') & ...
-                      strcmp(T_all.model_var, april_var);
-            
-            % Get September utilities for each mast condition (known mast)
-            idx_sep_low = strcmp(T_all.month, 'September') & ...
-                          strcmp(T_all.trend, trend) & ...
-                          strcmp(T_all.scenario, scenario) & ...
-                          strcmp(T_all.mast_condition, 'low');
-            
-            idx_sep_avg = strcmp(T_all.month, 'September') & ...
+            for wth = 1:length(weathers)  % Add weather loop
+                trend = trends{t};
+                scenario = scenarios{s};
+                april_var = april_vars{av};
+                weather = weathers{wth};
+                
+                fprintf('\n========================================\n');
+                fprintf('%s - Scenario %s - April Var: %s - Weather: %s\n', ...
+                    trend, scenario, april_var, weather);
+                fprintf('========================================\n');
+                
+                % Get January utility (no weather dimension)
+                idx_jan = strcmp(T_all.month, 'January') & ...
                           strcmp(T_all.trend, trend) & ...
                           strcmp(T_all.scenario, scenario) & ...
                           strcmp(T_all.mast_condition, 'average');
-            
-            idx_sep_high = strcmp(T_all.month, 'September') & ...
-                           strcmp(T_all.trend, trend) & ...
-                           strcmp(T_all.scenario, scenario) & ...
-                           strcmp(T_all.mast_condition, 'high');
-            
-            % Extract utilities
-            U_jan_vec = T_all.expected_utility(idx_jan);
-            U_apr_vec = T_all.expected_utility(idx_apr);
-            U_sep_low_vec = T_all.expected_utility(idx_sep_low);
-            U_sep_avg_vec = T_all.expected_utility(idx_sep_avg);
-            U_sep_high_vec = T_all.expected_utility(idx_sep_high);
-            
-            % Debug: Check if we have exactly 1 value for each
-            fprintf('  Found: Jan=%d, Apr=%d, SepLow=%d, SepAvg=%d, SepHigh=%d\n', ...
-                length(U_jan_vec), length(U_apr_vec), length(U_sep_low_vec), ...
-                length(U_sep_avg_vec), length(U_sep_high_vec));
-            
-            % Take first value if multiple
-            if ~isempty(U_jan_vec), U_jan = U_jan_vec(1); else, U_jan = NaN; end
-            if ~isempty(U_apr_vec), U_apr = U_apr_vec(1); else, U_apr = NaN; end
-            if ~isempty(U_sep_low_vec), U_sep_low = U_sep_low_vec(1); else, U_sep_low = NaN; end
-            if ~isempty(U_sep_avg_vec), U_sep_avg = U_sep_avg_vec(1); else, U_sep_avg = NaN; end
-            if ~isempty(U_sep_high_vec), U_sep_high = U_sep_high_vec(1); else, U_sep_high = NaN; end
-            
-            % Calculate value of information metrics
-            if ~isnan(U_jan) && ~isnan(U_apr) && ~isnan(U_sep_low) && ~isnan(U_sep_avg) && ~isnan(U_sep_high)
                 
-                % EVSI = Value of weather-based recruitment info (Jan → Apr)
-                EVSI = U_apr - U_jan;
+                % Get April utility (specific weather AND variation)
+                idx_apr = strcmp(T_all.month, 'April') & ...
+                          strcmp(T_all.trend, trend) & ...
+                          strcmp(T_all.scenario, scenario) & ...
+                          strcmp(T_all.mast_condition, 'average') & ...
+                          strcmp(T_all.model_var, april_var) & ...
+                          strcmp(T_all.weather, weather);
                 
-                % EVPI = Value of perfect info (Jan → Sep)
-                EVPI_low = U_sep_low - U_jan;
-                EVPI_avg = U_sep_avg - U_jan;
-                EVPI_high = U_sep_high - U_jan;
+                % Get September utilities (specific weather, each mast condition)
+                idx_sep_low = strcmp(T_all.month, 'September') & ...
+                              strcmp(T_all.trend, trend) & ...
+                              strcmp(T_all.scenario, scenario) & ...
+                              strcmp(T_all.mast_condition, 'low') & ...
+                              strcmp(T_all.weather, weather);
                 
-                % EVPXI = Additional value of knowing actual conditions (Apr → Sep)
-                EVPXI_low = U_sep_low - U_apr;
-                EVPXI_avg = U_sep_avg - U_apr;
-                EVPXI_high = U_sep_high - U_apr;
+                idx_sep_avg = strcmp(T_all.month, 'September') & ...
+                              strcmp(T_all.trend, trend) & ...
+                              strcmp(T_all.scenario, scenario) & ...
+                              strcmp(T_all.mast_condition, 'average') & ...
+                              strcmp(T_all.weather, weather);
                 
-                % Store results
-                result = struct();
-                result.trend = trend;
-                result.scenario = scenario;
-                result.april_var = april_var;
-                result.U_January = U_jan;
-                result.U_April = U_apr;
-                result.U_Sep_low = U_sep_low;
-                result.U_Sep_avg = U_sep_avg;
-                result.U_Sep_high = U_sep_high;
+                idx_sep_high = strcmp(T_all.month, 'September') & ...
+                               strcmp(T_all.trend, trend) & ...
+                               strcmp(T_all.scenario, scenario) & ...
+                               strcmp(T_all.mast_condition, 'high') & ...
+                               strcmp(T_all.weather, weather);
                 
-                result.EVSI = EVSI;
-                result.EVPI_low = EVPI_low;
-                result.EVPI_avg = EVPI_avg;
-                result.EVPI_high = EVPI_high;
+                % Extract utilities
+                U_jan_vec = T_all.expected_utility(idx_jan);
+                U_apr_vec = T_all.expected_utility(idx_apr);
+                U_sep_low_vec = T_all.expected_utility(idx_sep_low);
+                U_sep_avg_vec = T_all.expected_utility(idx_sep_avg);
+                U_sep_high_vec = T_all.expected_utility(idx_sep_high);
                 
-                result.EVPXI_low = EVPXI_low;
-                result.EVPXI_avg = EVPXI_avg;
-                result.EVPXI_high = EVPXI_high;
+                % Debug
+                fprintf('  Found: Jan=%d, Apr=%d, SepLow=%d, SepAvg=%d, SepHigh=%d\n', ...
+                    length(U_jan_vec), length(U_apr_vec), length(U_sep_low_vec), ...
+                    length(U_sep_avg_vec), length(U_sep_high_vec));
                 
-                result.percent_EVSI = (EVSI / abs(U_jan)) * 100;
-                result.percent_EVPI_low = (EVPI_low / abs(U_jan)) * 100;
-                result.percent_EVPI_avg = (EVPI_avg / abs(U_jan)) * 100;
-                result.percent_EVPI_high = (EVPI_high / abs(U_jan)) * 100;
+                % Take first value if multiple
+                if ~isempty(U_jan_vec), U_jan = U_jan_vec(1); else, U_jan = NaN; end
+                if ~isempty(U_apr_vec), U_apr = U_apr_vec(1); else, U_apr = NaN; end
+                if ~isempty(U_sep_low_vec), U_sep_low = U_sep_low_vec(1); else, U_sep_low = NaN; end
+                if ~isempty(U_sep_avg_vec), U_sep_avg = U_sep_avg_vec(1); else, U_sep_avg = NaN; end
+                if ~isempty(U_sep_high_vec), U_sep_high = U_sep_high_vec(1); else, U_sep_high = NaN; end
                 
-                results_voi = [results_voi; result];
-                
-                % Display results
-                fprintf('  U(January):              %.4f (baseline)\n', U_jan);
-                fprintf('  U(April - %s var):       %.4f (EVSI = %.4f, %.2f%%)\n', ...
-                    april_var, U_apr, EVSI, result.percent_EVSI);
-                fprintf('  ---\n');
-                fprintf('  U(Sep | low mast=5):     %.4f (EVPI = %.4f, %.2f%%)\n', ...
-                    U_sep_low, EVPI_low, result.percent_EVPI_low);
-                fprintf('  U(Sep | avg mast=13):    %.4f (EVPI = %.4f, %.2f%%)\n', ...
-                    U_sep_avg, EVPI_avg, result.percent_EVPI_avg);
-                fprintf('  U(Sep | high mast=20):   %.4f (EVPI = %.4f, %.2f%%)\n', ...
-                    U_sep_high, EVPI_high, result.percent_EVPI_high);
-                fprintf('  ---\n');
-                fprintf('  EVSI (Jan→Apr):          %.4f\n', EVSI);
-                fprintf('  EVPI range:              %.4f to %.4f\n', ...
-                    min([EVPI_low, EVPI_avg, EVPI_high]), max([EVPI_low, EVPI_avg, EVPI_high]));
-                fprintf('  EVPXI range:             %.4f to %.4f\n', ...
-                    min([EVPXI_low, EVPXI_avg, EVPXI_high]), max([EVPXI_low, EVPXI_avg, EVPXI_high]));
-            else
-                warning('Missing data for %s - Scenario %s - April Var %s', trend, scenario, april_var);
-            end
-        end
-    end
-end
+                % Calculate value of information metrics
+                if ~isnan(U_jan) && ~isnan(U_apr) && ~isnan(U_sep_low) && ~isnan(U_sep_avg) && ~isnan(U_sep_high)
+                    
+                    % Recruitment VOI (Jan → Apr)
+                    recruitment_VOI = U_apr - U_jan;
+                    
+                    % Total VOI (Jan → Sep) for each mast condition
+                    total_VOI_low = U_sep_low - U_jan;
+                    total_VOI_avg = U_sep_avg - U_jan;
+                    total_VOI_high = U_sep_high - U_jan;
+                    
+                    % Mast VOI (Apr → Sep) for each mast condition
+                    mast_VOI_low = U_sep_low - U_apr;
+                    mast_VOI_avg = U_sep_avg - U_apr;
+                    mast_VOI_high = U_sep_high - U_apr;
+                    
+                    % Store detailed results
+                    result = struct();
+                    result.trend = trend;
+                    result.scenario = scenario;
+                    result.april_var = april_var;
+                    result.weather = weather;
+                    result.U_January = U_jan;
+                    result.U_April = U_apr;
+                    result.U_Sep_low = U_sep_low;
+                    result.U_Sep_avg = U_sep_avg;
+                    result.U_Sep_high = U_sep_high;
+                    
+                    result.recruitment_VOI = recruitment_VOI;
+                    result.total_VOI_low = total_VOI_low;
+                    result.total_VOI_avg = total_VOI_avg;
+                    result.total_VOI_high = total_VOI_high;
+                    
+                    result.mast_VOI_low = mast_VOI_low;
+                    result.mast_VOI_avg = mast_VOI_avg;
+                    result.mast_VOI_high = mast_VOI_high;
+                    
+                    result.percent_recruitment = (recruitment_VOI / abs(U_jan)) * 100;
+                    result.percent_total_low = (total_VOI_low / abs(U_jan)) * 100;
+                    result.percent_total_avg = (total_VOI_avg / abs(U_jan)) * 100;
+                    result.percent_total_high = (total_VOI_high / abs(U_jan)) * 100;
+                    
+                    results_voi = [results_voi; result];
+                    
+                    % Display results
+                    fprintf('  U(January):              %.2f (baseline)\n', U_jan);
+                    fprintf('  U(April - %s var, %s):   %.2f (ΔU = %.2f, %.2f%%)\n', ...
+                        april_var, weather, U_apr, recruitment_VOI, result.percent_recruitment);
+                    fprintf('  ---\n');
+                    fprintf('  U(Sep | low mast, %s):   %.2f (ΔU = %.2f, %.2f%%)\n', ...
+                        weather, U_sep_low, total_VOI_low, result.percent_total_low);
+                    fprintf('  U(Sep | avg mast, %s):   %.2f (ΔU = %.2f, %.2f%%)\n', ...
+                        weather, U_sep_avg, total_VOI_avg, result.percent_total_avg);
+                    fprintf('  U(Sep | high mast, %s):  %.2f (ΔU = %.2f, %.2f%%)\n', ...
+                        weather, U_sep_high, total_VOI_high, result.percent_total_high);
+                    
+                    % Create simplified manuscript table row (only warm weather, for now)
+                    if strcmp(weather, 'warm')
+                        ms_row = struct();
+                        ms_row.TREND = upper(trend);
+                        ms_row.Scenario = scenario;
+                        ms_row.recruitment_VOI = recruitment_VOI;
+                        ms_row.total_VOI_low = total_VOI_low;
+                        ms_row.total_VOI_avg = total_VOI_avg;
+                        ms_row.total_VOI_high = total_VOI_high;
+                        ms_row.mast_VOI_low = mast_VOI_low;
+                        ms_row.mast_VOI_avg = mast_VOI_avg;
+                        ms_row.mast_VOI_high = mast_VOI_high;
+                        manuscript_table_rows = [manuscript_table_rows; ms_row];
+                    end
+                else
+                    warning('Missing data for %s - Scenario %s - April Var %s - Weather %s', ...
+                        trend, scenario, april_var, weather);
+                end
+            end  % weather loop
+        end  % april_vars
+    end  % scenarios
+end  % trends
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Create summary table
+%% Create summary tables
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+output_dir = 'Results/Utility_Results/';
+if ~exist(output_dir, 'dir'), mkdir(output_dir); end
+
 if ~isempty(results_voi)
-    VOI_table = struct2table(results_voi);
+    % Full detailed table
+    VOI_table_full = struct2table(results_voi);
     
     fprintf('\n\n========================================\n');
-    fprintf('VALUE OF INFORMATION SUMMARY\n');
+    fprintf('FULL VALUE OF INFORMATION SUMMARY\n');
     fprintf('========================================\n');
-    disp(VOI_table);
+    disp(VOI_table_full);
     
-    % Save table
-    output_dir = 'Results/Utility_Results/';
-    if ~exist(output_dir, 'dir'), mkdir(output_dir); end
-    writetable(VOI_table, fullfile(output_dir, 'VOI_summary.csv'));
-    fprintf('\nTable saved to: %s\n', fullfile(output_dir, 'VOI_summary.csv'));
+    writetable(VOI_table_full, fullfile(output_dir, 'VOI_summary_full.csv'));
+    fprintf('\nFull table saved to: %s\n', fullfile(output_dir, 'VOI_summary_full.csv'));
+end
+
+if ~isempty(manuscript_table_rows)
+    % Simplified manuscript table (format matching your original)
+    MS_table = struct2table(manuscript_table_rows);
+    
+    % Reorder columns to match your format
+    MS_table = MS_table(:, {'TREND', 'Scenario', 'recruitment_VOI', ...
+                            'total_VOI_low', 'total_VOI_avg', 'total_VOI_high', ...
+                            'mast_VOI_low', 'mast_VOI_avg', 'mast_VOI_high'});
+    
+    % Rename columns with proper headers
+    MS_table.Properties.VariableNames = {...
+        'TREND', 'Scenario', 'recruitment_VOI_Jan_Apr', ...
+        'total_VOI_Jan_Sept_LOW', 'total_VOI_Jan_Sept_AVG', 'total_VOI_Jan_Sept_HIGH', ...
+        'mast_VOI_Apr_Sept_LOW', 'mast_VOI_Apr_Sept_AVG', 'mast_VOI_Apr_Sept_HIGH'};
+    
+    fprintf('\n\n========================================\n');
+    fprintf('MANUSCRIPT TABLE (Warm Weather Only)\n');
+    fprintf('========================================\n');
+    disp(MS_table);
+    
+    writetable(MS_table, fullfile(output_dir, 'VOI_manuscript_table.csv'));
+    fprintf('\nManuscript table saved to: %s\n', fullfile(output_dir, 'VOI_manuscript_table.csv'));
+    
+    % Also create a formatted version with proper column headers for LaTeX/Word
+    writetable(MS_table, fullfile(output_dir, 'VOI_manuscript_table_formatted.txt'), ...
+               'Delimiter', '\t');
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Visualization - Separated by April Variation
+%% Visualization - Separated by April Variation AND Weather
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if ~isempty(results_voi)
     for av = 1:length(april_vars)
-        april_var = april_vars{av};
-        
-        % Filter results for this april_var
-        idx_var = strcmp({results_voi.april_var}, april_var);
-        results_subset = results_voi(idx_var);
-        
-        if isempty(results_subset)
-            continue;
-        end
-        
-        % Create labels
-        labels = cell(length(results_subset), 1);
-        for i = 1:length(results_subset)
-            trend_short = results_subset(i).trend;
-            if length(trend_short) > 3
-                trend_short = trend_short(1:3);
+        for wth = 1:length(weathers)
+            april_var = april_vars{av};
+            weather = weathers{wth};
+            
+            % Filter results for this april_var AND weather
+            idx_var = strcmp({results_voi.april_var}, april_var) & ...
+                      strcmp({results_voi.weather}, weather);
+            results_subset = results_voi(idx_var);
+            
+            if isempty(results_subset)
+                continue;
             end
-            labels{i} = sprintf('%s-%s', trend_short, results_subset(i).scenario);
-        end
-        
-        x = 1:length(results_subset);
-        width = 0.25;
-        
-        %% COMBINED FIGURE
-        fig_combined = figure('Position', [100, 100, 1600, 800]);
-        sgtitle(sprintf('Value of Information Analysis - April %s Variation', april_var), ...
-                'FontSize', 16, 'FontWeight', 'bold');
-        
-        % Subplot 1: EVSI
-        subplot(2,3,1);
-        bar([results_subset.EVSI], 'FaceColor', [0.2 0.4 0.7]);
-        set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
-        ylabel('Utility Gain', 'FontSize', 12);
-        title('Value of Recruitment Predictions (Jan → Apr)', 'FontSize', 14);
-        grid on;
-        yline(0, 'r--', 'LineWidth', 1.5);
-        
-        % Subplot 2: EVPI by mast
-        subplot(2,3,2);
-        hold on;
-        bar(x-width, [results_subset.EVPI_low], width, 'FaceColor', [0.9 0.6 0.6]);
-        bar(x, [results_subset.EVPI_avg], width, 'FaceColor', [0.9 0.9 0.6]);
-        bar(x+width, [results_subset.EVPI_high], width, 'FaceColor', [0.6 0.9 0.6]);
-        hold off;
-        set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
-        ylabel('EVPI (Utility Gain)', 'FontSize', 12);
-        title('EVPI (Jan → Sep)', 'FontSize', 14);
-        legend({'Low Mast', 'Avg Mast', 'High Mast'}, 'Location', 'best');
-        grid on;
-        yline(0, 'r--', 'LineWidth', 1.5);
-        
-        % Subplot 3: EVPXI
-        subplot(2,3,3);
-        hold on;
-        bar(x-width, [results_subset.EVPXI_low], width, 'FaceColor', [0.9 0.6 0.6]);
-        bar(x, [results_subset.EVPXI_avg], width, 'FaceColor', [0.9 0.9 0.6]);
-        bar(x+width, [results_subset.EVPXI_high], width, 'FaceColor', [0.6 0.9 0.6]);
-        hold off;
-        set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
-        ylabel('Incremental Utility Gain', 'FontSize', 12);
-        title('Additional Value (Apr → Sep)', 'FontSize', 14);
-        legend({'Low Mast', 'Avg Mast', 'High Mast'}, 'Location', 'best');
-        grid on;
-        yline(0, 'r--', 'LineWidth', 1.5);
-        
-        % Subplot 4: Utilities by timing
-        subplot(2,3,4);
-        hold on;
-        plot(x, [results_subset.U_January], 'o-', 'LineWidth', 2, 'MarkerSize', 8);
-        plot(x, [results_subset.U_April], 's-', 'LineWidth', 2, 'MarkerSize', 8);
-        plot(x, [results_subset.U_Sep_avg], 'd-', 'LineWidth', 2, 'MarkerSize', 8);
-        hold off;
-        set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
-        ylabel('Utility', 'FontSize', 12);
-        title('Utility by Decision Timing', 'FontSize', 14);
-        legend({'January', sprintf('April (%s)', april_var), 'September (avg)'}, 'Location', 'best');
-        grid on;
-        
-        % Subplot 5: September utilities
-        subplot(2,3,5);
-        hold on;
-        bar(x-width, [results_subset.U_Sep_low], width, 'FaceColor', [0.9 0.6 0.6]);
-        bar(x, [results_subset.U_Sep_avg], width, 'FaceColor', [0.9 0.9 0.6]);
-        bar(x+width, [results_subset.U_Sep_high], width, 'FaceColor', [0.6 0.9 0.6]);
-        hold off;
-        set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
-        ylabel('Utility', 'FontSize', 12);
-        title('September Utility by Mast', 'FontSize', 14);
-        legend({'Low Mast', 'Avg Mast', 'High Mast'}, 'Location', 'best');
-        grid on;
-        
-        % Subplot 6: Percent improvements
-        subplot(2,3,6);
-        hold on;
-        bar(x-width, [results_subset.percent_EVPI_low], width, 'FaceColor', [0.9 0.6 0.6]);
-        bar(x, [results_subset.percent_EVPI_avg], width, 'FaceColor', [0.9 0.9 0.6]);
-        bar(x+width, [results_subset.percent_EVPI_high], width, 'FaceColor', [0.6 0.9 0.6]);
-        hold off;
-        set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
-        ylabel('% Improvement', 'FontSize', 12);
-        title('EVPI as % of Baseline', 'FontSize', 14);
-        legend({'Low Mast', 'Avg Mast', 'High Mast'}, 'Location', 'best');
-        grid on;
-        yline(0, 'r--', 'LineWidth', 1.5);
-        
-        % Save combined figure
-        saveas(fig_combined, fullfile(output_dir, sprintf('VOI_all_plots_%s.png', april_var)));
-        saveas(fig_combined, fullfile(output_dir, sprintf('VOI_all_plots_%s.pdf', april_var)));
-        fprintf('Combined figure saved for April %s variation\n', april_var);
-        close(fig_combined);
-    end
+            
+            % Create labels
+            labels = cell(length(results_subset), 1);
+            for i = 1:length(results_subset)
+                trend_short = results_subset(i).trend;
+                if length(trend_short) > 3
+                    trend_short = trend_short(1:3);
+                end
+                labels{i} = sprintf('%s-%s', trend_short, results_subset(i).scenario);
+            end
+            
+            x = 1:length(results_subset);
+            
+            %% COMBINED FIGURE
+            fig_combined = figure('Position', [100, 100, 1600, 800]);
+            sgtitle(sprintf('VOI Analysis - April %s Variation, %s Weather', ...
+                           april_var, upper(weather)), ...
+                    'FontSize', 16, 'FontWeight', 'bold');
+            
+            % Subplot 1: Recruitment VOI (Jan → Apr)
+            subplot(2,3,1);
+            bar([results_subset.recruitment_VOI], 'FaceColor', [0.2 0.4 0.7]);
+            set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
+            ylabel('Utility Gain', 'FontSize', 12);
+            title('Recruitment VOI (ΔU: Jan → Apr)', 'FontSize', 14);
+            grid on;
+            yline(0, 'r--', 'LineWidth', 1.5);
+            
+            % Subplot 2: Total VOI - Low Mast (Jan → Sep)
+            subplot(2,3,2);
+            bar([results_subset.total_VOI_low], 'FaceColor', [0.8 0.3 0.3]);
+            set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
+            ylabel('Utility Change', 'FontSize', 12);
+            title('Total VOI | Low Mast (ΔU: Jan → Sep)', 'FontSize', 14);
+            grid on;
+            yline(0, 'r--', 'LineWidth', 1.5);
+            
+            % Subplot 3: Total VOI - Avg Mast (Jan → Sep)
+            subplot(2,3,3);
+            bar([results_subset.total_VOI_avg], 'FaceColor', [0.4 0.6 0.4]);
+            set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
+            ylabel('Utility Change', 'FontSize', 12);
+            title('Total VOI | Avg Mast (ΔU: Jan → Sep)', 'FontSize', 14);
+            grid on;
+            yline(0, 'r--', 'LineWidth', 1.5);
+            
+            % Subplot 4: Total VOI - High Mast (Jan → Sep)
+            subplot(2,3,4);
+            bar([results_subset.total_VOI_high], 'FaceColor', [0.6 0.4 0.8]);
+            set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
+            ylabel('Utility Change', 'FontSize', 12);
+            title('Total VOI | High Mast (ΔU: Jan → Sep)', 'FontSize', 14);
+            grid on;
+            yline(0, 'r--', 'LineWidth', 1.5);
+            
+            % Subplot 5: Mast VOI - All Conditions (Apr → Sep)
+            subplot(2,3,5);
+            hold on;
+            b1 = bar(x - 0.25, [results_subset.mast_VOI_low], 0.25, 'FaceColor', [0.8 0.3 0.3]);
+            b2 = bar(x, [results_subset.mast_VOI_avg], 0.25, 'FaceColor', [0.4 0.6 0.4]);
+            b3 = bar(x + 0.25, [results_subset.mast_VOI_high], 0.25, 'FaceColor', [0.6 0.4 0.8]);
+            set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
+            ylabel('Utility Change', 'FontSize', 12);
+            title('Mast VOI (ΔU: Apr → Sep)', 'FontSize', 14);
+            legend({'Low Mast', 'Avg Mast', 'High Mast'}, 'Location', 'best');
+            grid on;
+            yline(0, 'r--', 'LineWidth', 1.5);
+            hold off;
+            
+            % Subplot 6: Comparison of Recruitment vs Mast contributions
+            subplot(2,3,6);
+            hold on;
+            bar(x - 0.15, [results_subset.recruitment_VOI], 0.3, 'FaceColor', [0.2 0.4 0.7]);
+            bar(x + 0.15, [results_subset.mast_VOI_avg], 0.3, 'FaceColor', [0.4 0.6 0.4]);
+            set(gca, 'XTick', x, 'XTickLabel', labels, 'XTickLabelRotation', 45);
+            ylabel('Utility Change', 'FontSize', 12);
+            title('Recruitment vs Mast VOI (Avg Mast)', 'FontSize', 14);
+            legend({'Recruitment (Jan→Apr)', 'Mast (Apr→Sep)'}, 'Location', 'best');
+            grid on;
+            yline(0, 'r--', 'LineWidth', 1.5);
+            hold off;
+            
+            % Save figure
+            saveas(fig_combined, fullfile(output_dir, ...
+                sprintf('VOI_all_plots_%s_%s.png', april_var, weather)));
+            saveas(fig_combined, fullfile(output_dir, ...
+                sprintf('VOI_all_plots_%s_%s.pdf', april_var, weather)));
+            fprintf('Combined figure saved for April %s variation, %s weather\n', ...
+                april_var, weather);
+            close(fig_combined);
+        end  % weather
+    end  % april_vars
 end
 
 fprintf('\n========================================\n');

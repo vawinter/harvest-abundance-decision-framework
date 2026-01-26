@@ -12,13 +12,14 @@ library(dplyr)
 library(stringr)
 
 # Directory containing your PNG files
-input_dir <- "Results/ResultsMastLowSept"
+input_dir <-  "../../PSUTurkey/turkey_SDP/Results/Utility_Results/HighMast"
 output_dir <- "Stitched_Plots"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir)
 }
 
-mast_level <- "Low"  # or "High" - choose which mast level to show
+mast_level <- "High"  # Options: "Low", "High", or "Avg"
+weather_choice <- "warm"  # Options: "warm", "cold"
 
 ##############################################################################
 # Get all PNG files containing September
@@ -37,6 +38,7 @@ file_info <- data.frame(
   scenario = character(),
   type = character(),
   mast = character(),
+  weather = character(),
   stringsAsFactors = FALSE
 )
 
@@ -63,6 +65,14 @@ for (fname in sept_files) {
   mast <- case_when(
     str_detect(tolower(fname), "low") ~ "Low",
     str_detect(tolower(fname), "high") ~ "High",
+    str_detect(tolower(fname), "avg") ~ "Avg",
+    TRUE ~ ""
+  )
+  
+  # Extract weather
+  weather <- case_when(
+    str_detect(fname, "warm") ~ "warm",
+    str_detect(fname, "cold") ~ "cold",
     TRUE ~ ""
   )
   
@@ -80,12 +90,20 @@ for (fname in sept_files) {
     scenario = scenario,
     type = plot_type,
     mast = mast,
+    weather = weather,
     stringsAsFactors = FALSE
   ))
 }
 
+# Filter to only keep specified mast level and weather
+file_info <- file_info %>%
+  filter(weather == weather_choice)
+
+cat(sprintf("Filtered to %d files (weather=%s)\n", 
+            nrow(file_info), weather_choice))
+
 # Print what we found
-cat("\nFiles by trend:\n")
+cat("\nFiles by trend and type:\n")
 print(table(file_info$trend, file_info$type))
 
 ##############################################################################
@@ -145,6 +163,9 @@ create_grid <- function(files_df, plot_type_name) {
                                 gravity = "center",
                                 color = "red")
         row_images[[length(row_images) + 1]] <- blank
+        
+        cat(sprintf("WARNING: Missing file for trend=%s, scenario=%s\n", 
+                    pop_trend, scen))
       }
     }
     
@@ -170,12 +191,18 @@ if (nrow(action_files) > 0) {
   cat(sprintf("Using %d action files\n", nrow(action_files)))
   action_grid <- create_grid(action_files, "Action Plots")
   image_write(action_grid,
-              path = file.path(output_dir, paste0("Sept_action_trends_", mast_level, "Mast_grid.png")),
+              path = file.path(output_dir, 
+                               paste0("Sept_action_trends_", mast_level, "Mast_", 
+                                      weather_choice, "_grid.png")),
               density = 300)
   image_write(action_grid,
-              path = file.path(output_dir, paste0("Sept_action_trends_", mast_level, "Mast_grid.pdf")),
+              path = file.path(output_dir, 
+                               paste0("Sept_action_trends_", mast_level, "Mast_", 
+                                      weather_choice, "_grid.pdf")),
               format = "pdf")
   cat("Saved action plot grid\n")
+} else {
+  cat("WARNING: No action files found!\n")
 }
 
 # Season plots
@@ -185,12 +212,18 @@ if (nrow(season_files) > 0) {
   cat(sprintf("Using %d season files\n", nrow(season_files)))
   season_grid <- create_grid(season_files, "Season Distribution")
   image_write(season_grid,
-              path = file.path(output_dir, paste0("Sept_season_trends_", mast_level, "Mast_grid.png")),
+              path = file.path(output_dir, 
+                               paste0("Sept_season_trends_", mast_level, "Mast_", 
+                                      weather_choice, "_grid.png")),
               density = 300)
   image_write(season_grid,
-              path = file.path(output_dir, paste0("Sept_season_trends_", mast_level, "Mast_grid.pdf")),
+              path = file.path(output_dir, 
+                               paste0("Sept_season_trends_", mast_level, "Mast_", 
+                                      weather_choice, "_grid.pdf")),
               format = "pdf")
   cat("Saved season plot grid\n")
+} else {
+  cat("WARNING: No season files found!\n")
 }
 
 cat(sprintf("\nDone! Grid plots saved in: %s\n", output_dir))

@@ -12,13 +12,14 @@ library(dplyr)
 library(stringr)
 
 # Directory containing your PNG files
-input_dir <- "Results/Utility_Results"
+input_dir <- "../../PSUTurkey/turkey_SDP/Results/Utility_Results"
 output_dir <- "Stitched_Plots"
 if (!dir.exists(output_dir)) {
   dir.create(output_dir)
 }
 
 trend <- "Stable"  # Options: "Increase", "Stable", "Decrease"
+weather_choice <- "warm"  # Options: "warm", "cold"
 
 ##############################################################################
 # Get all PNG files containing the trend
@@ -68,9 +69,9 @@ for (fname in trend_files) {
     TRUE ~ ""
   )
   
-  # Extract weather (for April)
+  # Extract weather (for April AND September)
   weather <- ""
-  if (str_detect(fname, "April")) {
+  if (str_detect(fname, "April") | str_detect(fname, "September")) {
     weather <- case_when(
       str_detect(fname, "warm") ~ "warm",
       str_detect(fname, "cold") ~ "cold",
@@ -78,12 +79,12 @@ for (fname in trend_files) {
     )
   }
   
-  # Extract model variation (for April)
+  # Extract model variation (for April only)
   model_var <- ""
   if (str_detect(fname, "April")) {
     model_var <- case_when(
-      str_detect(fname, "Low") ~ "Low",
-      str_detect(fname, "High") ~ "High",
+      str_detect(fname, "Low") ~ "High", # low uncertainty, high precision
+      str_detect(fname, "High") ~ "Low",
       TRUE ~ ""
     )
   }
@@ -99,11 +100,15 @@ for (fname in trend_files) {
   ))
 }
 
-# Filter to only keep warm April files
+# Filter to only keep specified weather for April and September
 file_info <- file_info %>%
-  filter(!(month == "April" & weather == "cold"))
+  filter(
+    (month == "January") |  # Keep all January (no weather)
+      ((month == "April" | month == "September") & weather == weather_choice)  # Filter April/Sept
+  )
 
-cat(sprintf("Filtered to %d files (warm April only)\n", nrow(file_info)))
+cat(sprintf("Filtered to %d files (%s weather for April/September)\n", 
+            nrow(file_info), weather_choice))
 
 # Print summary
 cat("\nFile summary:\n")
@@ -118,10 +123,13 @@ create_grid <- function(files_df, plot_type_name) {
   
   # Define row structure: 4 rows
   rows_def <- list(
-    list(month = "January", label = "January", model_var = ""),
-    list(month = "April", label = "April (Low)", model_var = "Low"),
-    list(month = "April", label = "April (High)", model_var = "High"),
-    list(month = "September", label = "September", model_var = "")
+    list(month = "January", label = "January", model_var = "", weather = ""),
+    list(month = "April", label = "April - Low", 
+         model_var = "Low", weather = weather_choice),
+    list(month = "April", label = "April - High", 
+         model_var = "High", weather = weather_choice),
+    list(month = "September", label = "September", 
+         model_var = "", weather = weather_choice)
   )
   
   scenarios <- c("A", "B", "C")
@@ -134,11 +142,14 @@ create_grid <- function(files_df, plot_type_name) {
     row_images <- list()
     
     for (scen in scenarios) {
-      # Filter for this month, scenario, and model_var
+      # Filter for this month, scenario, model_var, and weather
       img_file <- files_df %>%
-        filter(month == row_def$month, 
-               scenario == scen,
-               (model_var == row_def$model_var | row_def$model_var == ""))
+        filter(
+          month == row_def$month, 
+          scenario == scen,
+          (model_var == row_def$model_var | row_def$model_var == ""),
+          (weather == row_def$weather | row_def$weather == "")
+        )
       
       if (nrow(img_file) > 0) {
         # Load image
@@ -209,10 +220,12 @@ if (nrow(action_files) > 0) {
   cat(sprintf("Using %d action files\n", nrow(action_files)))
   action_grid <- create_grid(action_files, "Action Plots")
   image_write(action_grid,
-              path = file.path(output_dir, paste0("action_", trend, "_grid.png")),
+              path = file.path(output_dir, 
+                               paste0("action_", trend, "_", weather_choice, "_grid.png")),
               density = 300)
   image_write(action_grid,
-              path = file.path(output_dir, paste0("action_", trend, "_grid.pdf")),
+              path = file.path(output_dir, 
+                               paste0("action_", trend, "_", weather_choice, "_grid.pdf")),
               format = "pdf")
   cat("Saved action plot grid\n")
 }
@@ -224,10 +237,12 @@ if (nrow(season_files) > 0) {
   cat(sprintf("Using %d season files\n", nrow(season_files)))
   season_grid <- create_grid(season_files, "Season Distribution")
   image_write(season_grid,
-              path = file.path(output_dir, paste0("season_", trend, "_grid.png")),
+              path = file.path(output_dir, 
+                               paste0("season_", trend, "_", weather_choice, "_grid.png")),
               density = 300)
   image_write(season_grid,
-              path = file.path(output_dir, paste0("season_", trend, "_grid.pdf")),
+              path = file.path(output_dir, 
+                               paste0("season_", trend, "_", weather_choice, "_grid.pdf")),
               format = "pdf")
   cat("Saved season plot grid\n")
 }

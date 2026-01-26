@@ -59,15 +59,18 @@ end
 for m = 1:length(months)
     scenario_month = months{m};
     
-    % Weather loop (only matters for April)
+    % Weather loop - matters for both April AND September
     if strcmp(scenario_month, 'April')
         weather_list = weathers;
-        var_list = model_var;  % Add variation scenarios for April
-    else
+        var_list = model_var;  
+    elseif strcmp(scenario_month, 'September')
+        weather_list = weathers;  % Get Pbar for warm/cold April values for September
+        var_list = {''};          % But no variation scenarios
+    else  % January
         weather_list = {''};
-        var_list = {''};  % No variation scenarios for other months
+        var_list = {''};
     end
-    
+        
     for v = 1:length(var_list)
         april_var = var_list{v};
 
@@ -80,10 +83,12 @@ for m = 1:length(months)
                 for s = 1:length(scenarios)
                     scenario_0 = scenarios{s};
                     
-                    % Create unique identifier
+                   % Create unique identifier
                     if strcmp(scenario_month, 'April')
                         run_id = sprintf('%s_%s_%s_%s_%s', scenario_month, april_weather, april_var, scenario_trend, scenario_0);
-                    else
+                    elseif strcmp(scenario_month, 'September')
+                        run_id = sprintf('%s_%s_%s_%s', scenario_month, april_weather, scenario_trend, scenario_0);
+                    else  % January
                         run_id = sprintf('%s_%s_%s', scenario_month, scenario_trend, scenario_0);
                     end
                     
@@ -216,9 +221,9 @@ function [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend,
     % Adjust Pbar for April and September based on weather
     if strcmp(scenario_month, 'April') || strcmp(scenario_month, 'September')
         if strcmp(april_weather, 'cold')
-            Pbar = Pbar_base - 0.035;
+            Pbar = Pbar_base - 0.035; % COLD: Lower recruitment
         elseif strcmp(april_weather, 'warm')
-            Pbar = Pbar_base + 0.039;
+            Pbar = Pbar_base + 0.039; % WARM: Higher recruitment
         else
             Pbar = Pbar_base;  % Default if weather not specified
         end
@@ -448,11 +453,19 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = PennTu
     Jd = @(Fs, Pa, H) (1 - H) .* Fs .* Pa / 2;            % December jake population
     Fd = @(Fs, Pa, H) (1 - H) .* Fs .* (1 + Pa / 2);      % December female population
      
-    %% Random Noise Variables for Survival and Reproduction
+   %% Random Noise Variables for Survival and Reproduction
     vparams = Burr3mom2param(1, cvv, 0);
-    wparams = Burr3mom2param(1, cvw, 0);
     v = rvdef('burr3', vparams, 25);            % Summer survival
-    w = rvdef('burr3', wparams, 25);            % Poults per hen
+
+    % Only create w distribution if cvw > 0
+    if cvw > 0
+        wparams = Burr3mom2param(1, cvw, 0);
+        w = rvdef('burr3', wparams, 25);        % Poults per hen
+    else
+        % For September (cvw=0): create nearly deterministic distribution
+        wparams = Burr3mom2param(1, 1e-6, 0);   % Mean=1, CV≈0
+        w = rvdef('burr3', wparams, 25);
+    end
     
     %% Discretization of the State Variables
     minpop = 0.00;
