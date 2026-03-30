@@ -3,12 +3,10 @@
 % A Case Study for Wild Turkey Management
 % Winter et al. 20XX
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%X
-% Decision made at (January, April) time-point
-% January = mean mast and 'guess' at recruitment
-% April = predicted recruitment metrics based on weather.
+% Decision made at September time-point
+% September = known recruitment and mast 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% Automated Decision Framework Analysis - All Combinations
-% REPLACE 08_decision_model.m with this script to run all combinations of scenarios and save results/plots
+% Automated Decision Framework Analysis - September
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 clear; clc;
 
@@ -20,7 +18,9 @@ save_plots = true;
 save_results = true;
 
 % Create output directory
-output_dir = 'Results/Utility_Results_UpdatedPlots';
+output_dir = 'Results/Sept_Mast_StateVar_avg';
+% output_dir = 'Results/Sept_Mast_StateVar_low';
+% output_dir = 'Results/Sept_Mast_StateVar_high';
 if ~exist(output_dir, 'dir')
     mkdir(output_dir);
 end
@@ -28,14 +28,28 @@ end
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Define all combinations to test
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-months = {'January', 'April'};
-trends = {'Increase', 'Stable', 'Decrease'};
+months = {'September'};
+trends = {
+    %'Increase', 
+'Stable'
+%, 'Decrease'
+};
 scenarios = {'A', 'B', 'C'};
-weathers = {'warm', 'cold'};
+weathers = {'warm'
+%, 'cold'
+};
 model_var = {'Low', 'High'};
 
 % Fixed parameters
-omu    = 12.998;
+% Average mast
+omu = 12.998;
+
+% Low mast  
+% omu = 6;
+
+% High mast
+% omu = 16;
+
 slope  = 0.2;
 uw_fixed = 0.2;
 L = (0:3)';
@@ -61,7 +75,10 @@ for m = 1:length(months)
     if strcmp(scenario_month, 'April')
         weather_list = weathers;
         var_list = model_var;
-    else  % January
+    elseif strcmp(scenario_month, 'September')
+        weather_list = weathers;
+        var_list = {''};
+    else
         weather_list = {''};
         var_list = {''};
     end
@@ -80,6 +97,8 @@ for m = 1:length(months)
 
                     if strcmp(scenario_month, 'April')
                         run_id = sprintf('%s_%s_%s_%s_%s', scenario_month, april_weather, april_var, scenario_trend, scenario_0);
+                    elseif strcmp(scenario_month, 'September')
+                        run_id = sprintf('%s_%s_%s_%s', scenario_month, april_weather, scenario_trend, scenario_0);
                     else
                         run_id = sprintf('%s_%s_%s', scenario_month, scenario_trend, scenario_0);
                     end
@@ -98,40 +117,66 @@ for m = 1:length(months)
 
                         use_w = (cvw > 0);
 
-                        % Capture aa and svals for plotting
                         [model, results, mm, ES, aa, pp, F, J, M, svals, D, ~, ~] = ...
                             PennTurkeyModel(uw_fixed, Fbar, Pbar, slope, osig, omu, use_w, cvw);
 
-                        [F_means, MJ_means] = runSimulations(D, L, reps, time_steps);
+                        O = (6:16)';
+                        O_mid = O(max(1, min(length(O), round((omu - O(1)) / (O(2) - O(1))) + 1)));
+                        [F_means, MJ_means] = runSimulations(D, L, reps, time_steps, O_mid);
 
-                        if save_results
-                            all_results(result_counter).run_id = run_id;
-                            all_results(result_counter).month = scenario_month;
-                            all_results(result_counter).trend = scenario_trend;
-                            all_results(result_counter).scenario = scenario_0;
-                            all_results(result_counter).weather = april_weather;
-                            all_results(result_counter).value_function = results.v;
+                       if save_results
+                            all_results(result_counter).run_id    = run_id;
+                            all_results(result_counter).month     = scenario_month;
+                            all_results(result_counter).trend     = scenario_trend;
+                            all_results(result_counter).scenario  = scenario_0;
+                            all_results(result_counter).weather   = april_weather;
+                            all_results(result_counter).value_function  = results.v;
                             all_results(result_counter).stationary_dist = pp;
                             all_results(result_counter).model_var = april_var;
 
-                           % Expected value function: E_π[V(s)] = pp' * v
-                            % This is the correct quantity for VOI comparison across decision points
+                            
+                            % Expected value function: E_π[V(s)] = pp' * v
                             if ~isempty(pp) && ~isempty(results.v)
-                                % Stationary distribution available - correct EVF
+                                % Stationary distribution available - exact EVF
                                 all_results(result_counter).expected_utility = pp' * results.v;
+                                all_results(result_counter).stationary_dist  = pp;
                             elseif ~isempty(results.v)
-                                % Fallback: shouldn't normally trigger for Jan/April
-                                all_results(result_counter).expected_utility = mean(results.v);
-                                warning('pstar empty for %s - using mean(v) as fallback', run_id);
+                                % Simulation fallback: weight v by empirical state visit frequencies
+                                fprintf('Computing EVF via simulation weighting...\n');
+                                reps_evf = 50000;
+                                SS_evf = dsim(D, ones(reps_evf,1) * [1.5, 1.5, 3, O_mid], ...
+                                            200, model.X(results.Ixopt, 1), [], [], 0);
+
+                                M_step = M(2) - M(1);
+                                J_step = J(2) - J(1);
+                                F_step = F(2) - F(1);
+
+                                M_idx = max(1, min(length(M), round((SS_evf{2}(:,end) - M(1)) / M_step) + 1));
+                                J_idx = max(1, min(length(J), round((SS_evf{3}(:,end) - J(1)) / J_step) + 1));
+                                F_idx = max(1, min(length(F), round((SS_evf{4}(:,end) - F(1)) / F_step) + 1));
+
+                                nM = length(M); nJ = length(J); nF = length(F); nO = length(O);
+                                v_grid = reshape(results.v, [nM nJ nF nO]);
+                                v_MJF  = mean(v_grid, 4);
+
+                                linear_idx = sub2ind([nM nJ nF], M_idx, J_idx, F_idx);
+
+                                % Empirical state frequencies = approximation of π(s)
+                                % Save as stationary_dist so VOI script can use for proper weighting
+                                freq = histcounts(linear_idx, 1:nM*nJ*nF+1)' / reps_evf;
+
+                                all_results(result_counter).expected_utility = freq' * v_MJF(:);
+                                all_results(result_counter).stationary_dist  = freq;
                             else
-                                warning('Could not calculate expected value function for %s', run_id);
+                                warning('Could not calculate EVF for %s', run_id);
                                 all_results(result_counter).expected_utility = NaN;
+                                all_results(result_counter).stationary_dist  = [];
                             end
 
                             all_results(result_counter).optimal_action = mode(model.X(results.Ixopt, 1));
-                            all_results(result_counter).F_means = F_means;
+                            all_results(result_counter).F_means  = F_means;
                             all_results(result_counter).MJ_means = MJ_means;
-                            all_results(result_counter).ES = ES;
+                            all_results(result_counter).ES       = ES;
                             result_counter = result_counter + 1;
                         end
 
@@ -151,7 +196,7 @@ for m = 1:length(months)
 end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Save results
+%% Save resultsif 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if save_results && exist('all_results', 'var') && ...
         ~isempty(all_results) && isfield(all_results, 'run_id')
@@ -199,7 +244,7 @@ function [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend,
         Pbar_base = 1.62;
     end
 
-    if strcmp(scenario_month, 'April')
+    if strcmp(scenario_month, 'April') || strcmp(scenario_month, 'September')
         if strcmp(april_weather, 'cold')
             Pbar = Pbar_base - 0.035;
         elseif strcmp(april_weather, 'warm')
@@ -207,20 +252,23 @@ function [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend,
         else
             Pbar = Pbar_base;
         end
-    else  % January
+    else
         Pbar = Pbar_base;
     end
 
-    if strcmp(scenario_month, 'April')
+    if strcmp(scenario_month, 'September')
+        osig = 1.0;
+        cvw  = 0;
+    elseif strcmp(scenario_month, 'April')
         osig = 2.3;
         if strcmp(april_var, 'Low')
             cvw = (1.116 / 4.96) * 0.5;
         else
             cvw = (1.116 / 4.96) * 2;
         end
-    else  % January
+    else
         osig = 2.3;
-        cvw = 1.116 / 4.96;
+        cvw  = 1.116 / 4.96;
     end
 end
 
@@ -232,11 +280,11 @@ function setGlobalWeights(weights)
     w3 = weights(4);
 end
 
-function [F_means, MJ_means] = runSimulations(D, L, reps, time_steps)
+function [F_means, MJ_means] = runSimulations(D, L, reps, time_steps, O_mid)
     F_means  = zeros(length(L), 1);
     MJ_means = zeros(length(L), 1);
     for i = 1:length(L)
-        SS = dsim(D, ones(reps,1) * [1.5, 1.5, 3], time_steps, L(i), [], [], 0);
+        SS = dsim(D, ones(reps,1) * [1.5, 1.5, 3, O_mid], time_steps, L(i), [], [], 0);
         F_means(i)  = mean(SS{4}(:, end));
         MJ_means(i) = mean(SS{1}(:, end) + SS{2}(:, end));
     end
@@ -259,8 +307,7 @@ function savePlots(results, aa, mm, ES, F, M, J, L, F_means, MJ_means, ...
     end
 
     %% 2. Long-run season length distribution
-    % aa(i) = long-run probability of season length i-1 under optimal policy
-    if ~isempty(aa) && any(aa > 0)
+    if ~isempty(aa)
         fig = figure('Visible', 'off');
         L_plot = (0:length(aa)-1)';
         plot(L_plot, aa, 'k.-', 'LineWidth', 2, 'MarkerSize', 20);
@@ -276,17 +323,12 @@ function savePlots(results, aa, mm, ES, F, M, J, L, F_means, MJ_means, ...
     end
 
     %% 3. Long-run population density distributions
-    % Works for both pstar path (marginals over state grids M, J, F)
-    % and simulation fallback path (ksdensity over svals)
-    if ~isempty(mm) && length(mm) >= 3 && ~isempty(mm{1})
+    if ~isempty(mm) && length(mm) >= 3
         fig = figure('Visible', 'off');
         set(fig, 'Position', [100, 100, 700, 500]);
         hold on;
 
-        % Determine x-axis based on which path produced mm:
-        % pstar path:      mm{i} length = length of state grid (41 or 71)
-        % simulation path: mm{i} length = length(svals) = 501
-        if ~isempty(svals) && length(mm{1}) == length(svals)
+        if length(mm{1}) == 501 && ~isempty(svals)
             xaxis_M = svals;
             xaxis_J = svals;
             xaxis_F = svals;
@@ -304,10 +346,10 @@ function savePlots(results, aa, mm, ES, F, M, J, L, F_means, MJ_means, ...
         legend('Interpreter', 'latex', 'Location', 'northeast', 'FontSize', 14);
         xlim([0, max(F)]);
        % ylim([0, max([max(mm{1}), max(mm{2}), max(mm{3})]) * 1.15]);
-        ylim([0, 3.5]);
+       ylim([0, 3.5]);
         xlabel('Population Density', 'Interpreter', 'latex', 'FontSize', 16);
         ylabel('Probability Density', 'Interpreter', 'latex', 'FontSize', 16);
-     %   title(strrep(run_id, '_', '\_'), 'FontSize', 11);
+       % title(strrep(run_id, '_', '\_'), 'FontSize', 11);
         set(gca, 'FontSize', 14);
         grid on;
         saveas(fig, fullfile(output_dir, sprintf('longrun_pop_%s.png', run_id)));
@@ -403,34 +445,50 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
     %% Decision Variables
     L = (0:3)';
 
-    %% Oak Mast: random variable, integrated out into expected harvest
-    O = (0:26)';
-    po = normpdf(O, omu, osig);
-    po(O <= 5)  = sum(po(O <= 5));
-    po(O >= 15) = sum(po(O >= 15));
-    po = po(6:16) / sum(po(6:16));
+    %% Oak Mast: build truncated distribution then clip to state grid
+    O_full  = (0:26)';
+    po_full = normpdf(O_full, omu, osig);
+    po_full(O_full <= 5)  = sum(po_full(O_full <= 5));
+    po_full(O_full >= 15) = sum(po_full(O_full >= 15));
+    po = po_full(6:16) / sum(po_full(6:16));
+    O  = O_full(6:16);
 
-    % Harvest rate: mast integrated out - expected harvest by season length
-    H_table = [zeros(11,1) max(0.01, (0.07 - 0.00686*O(6:16) + 0.0175*(1:3)))];
-    eH = H_table' * po;          % [4x1] expected harvest by season length
-    H  = @(L_val) eH(L_val + 1);
+    %% Harvest Rate: conditioned on observed mast AND season length
+    [L_grid, O_grid] = ndgrid(0:3, O);
+    H_vals   = max(0.01, 0.07 - 0.00686 * O_grid + 0.0175 * L_grid);
+    H_lookup = H_vals(:);
 
-    %% Transition Functions
-    Ms = @(Md, v) gammam * Md .* v;
-    Js = @(Jd, v) gammaj * Jd .* v;
-    Fs = @(Fd, v) gammaf * Fd .* v;
+    H_cpd.type       = 'd';
+    H_cpd.parameters = [];
+    H_cpd.cpt        = H_vals(:)';
+    H_cpd.values     = 1;
+    H_cpd.q          = [];
+    H_cpd.ztype      = 'u';
+    H_cpd.simfunc    = @(u, idx) H_lookup(idx);
 
+    %% Mast RV for i.i.d. transition
+    o_rv.type       = 'd';
+    o_rv.parameters = [];
+    o_rv.values     = O(:);
+    o_rv.q          = po(:);
+    o_rv.cpt        = cumsum(po(:));
+
+    %% Poult production - no mast effect
     if use_w
         Ps = @(F_val, w) 2 * eta * Pbar ./ ...
             (eta + 1 + (eta - 1) * (F_val / Fbar).^eta) .* w;
     else
         Ps = @(F_val, w) 2 * eta * Pbar ./ ...
-            (eta + 1 + (eta - 1) * (F_val / Fbar).^eta) * 1;
+            (eta + 1 + (eta - 1) * (F_val / Fbar).^eta);
     end
 
-    Md = @(Ms_val, Js_val)        Ms_val + Js_val;
-    Jd = @(Fs_val, Pa, H_val)     (1 - H_val) .* Fs_val .* Pa / 2;
-    Fd = @(Fs_val, Pa, H_val)     (1 - H_val) .* Fs_val .* (1 + Pa / 2);
+    %% Remaining Transition Functions
+    Ms = @(Md, v)             gammam * Md .* v;
+    Js = @(Jd, v)             gammaj * Jd .* v;
+    Fs = @(Fd, v)             gammaf * Fd .* v;
+    Md = @(Ms_val, Js_val)    Ms_val + Js_val;
+    Jd = @(Fs_val, Pa, H_val) (1 - H_val) .* Fs_val .* Pa / 2;
+    Fd = @(Fs_val, Pa, H_val) (1 - H_val) .* Fs_val .* (1 + Pa / 2);
 
     %% Random Variables
     vparams = Burr3mom2param(1, cvv, 0);
@@ -459,20 +517,23 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
 
     %% Decision Diagram
     D = [];
-    D = add2diagram(D, 'L',       'a', true, {},              L,  [0.1278, 0.3713], []);
-    D = add2diagram(D, 'Mj',      's', true, {},              M,  [0.1196, 0.7941], []);
-    D = add2diagram(D, 'Jj',      's', true, {},              J,  [0.1125, 0.7143], []);
-    D = add2diagram(D, 'Fj',      's', true, {},              F,  [0.1172, 0.6160], []);
-    D = add2diagram(D, 'v',       'c', true, {},              v,  [0.3005, 0.9365], []);
-    D = add2diagram(D, 'w',       'c', true, {},              w,  [0.3282, 0.4451], []);
-    D = add2diagram(D, 'H',       'c', true, {'L'},           H,  [0.5181, 0.3684], [5 1]);
-    D = add2diagram(D, 'Ms',      'c', true, {'Mj','v'},      Ms, [0.4804, 0.7865], [5 1; 5 1]);
-    D = add2diagram(D, 'Js',      'c', true, {'Jj','v'},      Js, [0.4810, 0.7025], [5 1; 5 1]);
-    D = add2diagram(D, 'Fs',      'c', true, {'Fj','v'},      Fs, [0.4751, 0.6156], [5 1; 5 1]);
-    D = add2diagram(D, 'Ps',      'c', true, {'Fj','w'},      Ps, [0.4760, 0.4859], [5 1; 5 1]);
-    D = add2diagram(D, 'Mj+',     'f', true, {'Ms','Js'},     Md, [0.7376, 0.7955], [5 1; 5 1]);
-    D = add2diagram(D, 'Jj+',     'f', true, {'Fs','Ps','H'}, Jd, [0.7477, 0.7058], [5 1; 5 1; 5 1]);
-    D = add2diagram(D, 'Fj+',     'f', true, {'Fs','Ps','H'}, Fd, [0.7706, 0.6217], [5 1; 5 1; 5 1]);
+    D = add2diagram(D, 'L',       'a', true, {},              L,       [0.1278, 0.3713], []);
+    D = add2diagram(D, 'Mj',      's', true, {},              M,       [0.1196, 0.7941], []);
+    D = add2diagram(D, 'Jj',      's', true, {},              J,       [0.1125, 0.7143], []);
+    D = add2diagram(D, 'Fj',      's', true, {},              F,       [0.1172, 0.6160], []);
+    D = add2diagram(D, 'Oj',      's', true, {},              O,       [0.1200, 0.5000], []);
+    D = add2diagram(D, 'v',       'c', true, {},              v,       [0.3005, 0.9365], []);
+    D = add2diagram(D, 'w',       'c', true, {},              w,       [0.3282, 0.4451], []);
+    D = add2diagram(D, 'H',       'c', true, {'L','Oj'},      H_cpd,   [0.5181, 0.3684], [5 1; 5 1]);
+    D = add2diagram(D, 'Onext',   'c', true, {},              o_rv,    [0.6500, 0.5000], []);
+    D = add2diagram(D, 'Oj+',     'f', true, {'Onext'},       @(x) x, [0.7700, 0.5000], [5 1]);
+    D = add2diagram(D, 'Ms',      'c', true, {'Mj','v'},      Ms,      [0.4804, 0.7865], [5 1; 5 1]);
+    D = add2diagram(D, 'Js',      'c', true, {'Jj','v'},      Js,      [0.4810, 0.7025], [5 1; 5 1]);
+    D = add2diagram(D, 'Fs',      'c', true, {'Fj','v'},      Fs,      [0.4751, 0.6156], [5 1; 5 1]);
+    D = add2diagram(D, 'Ps',      'c', true, {'Fj','w'},      Ps,      [0.4760, 0.4859], [5 1; 5 1]);
+    D = add2diagram(D, 'Mj+',     'f', true, {'Ms','Js'},     Md,      [0.7376, 0.7955], [5 1; 5 1]);
+    D = add2diagram(D, 'Jj+',     'f', true, {'Fs','Ps','H'}, Jd,      [0.7477, 0.7058], [5 1; 5 1; 5 1]);
+    D = add2diagram(D, 'Fj+',     'f', true, {'Fs','Ps','H'}, Fd,      [0.7706, 0.6217], [5 1; 5 1; 5 1]);
     D = add2diagram(D, 'utility', 'u', true, {'L','Mj','Jj','Fj'}, ut, [0.3649, 0.1564], [5 1; 5 1; 5 1; 5 1]);
 
     %% Model and MDP Options
@@ -483,10 +544,23 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
     results = mdpsolve(model, moptions);
 
     if isfield(results, 'Ixopt')
-        Xopt = model.X(results.Ixopt, :);
-        results.Xopt = Xopt;
+        results.Xopt = model.X(results.Ixopt, :);
     else
         results.Xopt = [];
+    end
+
+    %% Attempt to compute pstar from model.P if mdpsolve did not return it
+    if isempty(results.pstar)
+        if ~isempty(model.P) && ~isa(model.P, 'function_handle')
+            try
+                results.pstar = model.P(:, results.Ixopt)';
+                fprintf('pstar computed from model.P: %s\n', mat2str(size(results.pstar)));
+            catch
+                results.pstar = [];
+            end
+        else
+            fprintf('model.P is EV function - using simulation for mm and aa\n');
+        end
     end
 
     %% Post-solution Processing
@@ -496,8 +570,7 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
         for i = 1:500
             pp = results.pstar * pp;
         end
-        % State space is [M x J x F] - 3 states, no mast dimension
-        mm = marginals(pp, [length(M) length(J) length(F)]);
+        mm = marginals(pp, [length(M) length(J) length(F) length(O)]);
         ES = pp' * [results.Xopt Ps(results.Xopt(:,4), 1)];
         if nargout >= 5
             aa = zeros(1, 4);
@@ -506,17 +579,19 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
             end
         end
     else
-        % Simulation fallback - mast is random so no mast state in dsim
+        % Simulation fallback for mm, aa, ES
+        fprintf('Using simulation fallback for mm and aa...\n');
         reps_sim = 100000;
-        SS = dsim(D, ones(reps_sim,1) * [1.5, 1.5, 3], 200, ...
+        % O_init = O(round(length(O)/2));
+        O_init = O(max(1, min(length(O), round((omu - O(1)) / (O(2) - O(1))) + 1)));
+        SS = dsim(D, ones(reps_sim,1) * [1.5, 1.5, 3, O_init], 200, ...
                   model.X(results.Ixopt, 1), [], [], 0);
         svals = linspace(0, max(F), 501)';
-        mm = cell(1, 3);
-        % Kernel density estimates over svals - matches original lrpplot style
-        [mm{1}, ~] = ksdensity(SS{2}(:,end), svals);  % M marginal
-        [mm{2}, ~] = ksdensity(SS{3}(:,end), svals);  % J marginal
-        [mm{3}, ~] = ksdensity(SS{4}(:,end), svals);  % F marginal
-        % aa: long-run season length distribution from simulation
+        mm = cell(1, 4);
+        [mm{1}, ~] = ksdensity(SS{2}(:,end), svals);
+        [mm{2}, ~] = ksdensity(SS{3}(:,end), svals);
+        [mm{3}, ~] = ksdensity(SS{4}(:,end), svals);
+        mm{4} = po;
         aa = zeros(1, 4);
         for i = 0:3
             aa(i+1) = mean(SS{1}(:,end) == i);

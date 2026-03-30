@@ -16,28 +16,64 @@
 %            Recruitment = weather-based prediction
 %            Mast = stochastic (mean = 12.998, SD = 3.684)
 %
-% September: Both recruitment and mast known from field observations
+% September: Both recruitment and mast known 
 %            Recruitment = observed from brood surveys
-%            Mast = observed from mast surveys
+%            Mast = State Variable
 %
 % VALUE OF INFORMATION METRICS:
 % ------------------------------
-% Recruitment VOI: ΔU(Jan→Apr) = U(April) - U(January)
-%                  Utility gain from weather-based recruitment forecasts
+% Recruitment VOI: ΔEV(Jan→Apr) = EV(April) - EV(January)
+%                  Change in expected population state (M, J, F) from
+%                  incorporating weather-based recruitment forecasts
 %
-% Total VOI:       ΔU(Jan→Sept) = U(September|mast) - U(January)
-%                  Value of resolving both uncertainties
-%                  Calculated separately for low, average, and high mast
+% Total VOI:       ΔEV(Jan→Sept) = EV(September) - EV(January)
+%                  Change in expected population state (M, J, F) from
+%                  resolving both recruitment and mast uncertainties
+%                  Averaged across warm/cold weather conditions
 %
-% Mast VOI:        ΔU(Apr→Sept) = U(September|mast) - U(April)
-%                  Value of knowing actual recruitment and mast vs predicted recruitment
-%                  Calculated separately for low, average, and high mast
+% Mast VOI:        ΔEV(Apr→Sept) = EV(September) - EV(April)
+%                  Change in expected population state (M, J, F) from
+%                  knowing actual mast on top of predicted recruitment
+%                  Averaged across warm/cold weather conditions
+%
+% STRUCTURE:
+% ----------
+% Results loaded from two sources:
+%   - Jan/April:   Results/Utility_Results_UpdatedPlots/all_utility_results.mat
+%   - September:   Results/Sept_Mast_Results_StateVar_avg/avg_all_utility_results.mat
+%
+% VOI computed across all combinations of:
+%   - Population trend:  Increase, Stable, Decrease
+%   - Scenario:          A, B, C
+%   - Weather condition: warm, cold (April and September only)
+%
+% Outputs:
+%   - Full VOI table printed to console (trend x scenario x weather)
+%   - Mean VOI summary by population trend
+%   - Bar plot saved to Results/VOI_comparison.png
 %
 % Interpretation:
 % ---------------
-% Positive (+): Additional information increases utility (gain from waiting)
-% Zero (0): No benefit to additional information (doesn't change decisions)
-% Negative (-): Additional information decreases utility (loss from waiting)
+% VOI is measured as change in expected steady-state abundance of adult
+% males (M), juvenile males (J), and females (F) under the optimal policy
+% at each decision point. The management goal is to balance harvest
+% opportunity (season length) with long-run population sustainability.
+%
+% Positive (+): Later decision point yields higher expected abundance —
+%               additional information enables harvest decisions that
+%               better sustain population levels while maintaining
+%               hunting opportunity
+%
+% Zero (0):     Decision timing does not affect expected population state —
+%               the optimal harvest decision and resulting abundance are
+%               the same regardless of when it is made
+%
+% Negative (-): Later decision point yields lower expected abundance —
+%               decisions made under uncertainty are more precautionary,
+%               producing more conservative harvest and higher long-run
+%               abundance than decisions made with realized information
+%               (e.g., observed high mast in September permits more
+%               aggressive harvest, reducing future abundance)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clear; clc;
@@ -46,17 +82,17 @@ clear; clc;
 %% Load all three result files
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Load baseline (average mast = 12.998)
-load('Results/Utility_Results/all_utility_results.mat');
+load('Results/Sept_Utility_Results_CurrentFuture/avg_CF_all_utility_results.mat');
 all_results_avg = all_results;
 clear all_results;
 
 % Load low mast (mast = 5)
-load('Results/Utility_Results/LowMast/all_utility_results_LowMast.mat');
+load('Results/Sept_Utility_Results_CurrentFuture/low_CF_all_utility_results.mat');
 all_results_low = all_results;
 clear all_results;
 
 % Load high mast (mast = 20)
-load('Results/Utility_Results/HighMast/all_utility_results_HighMast.mat');
+load('Results/Sept_Utility_Results_CurrentFuture/all_utility_results.mat');
 all_results_high = all_results;
 clear all_results;
 
