@@ -8,8 +8,7 @@
 % Run 2: Stable weights + Decrease parameters   → Reality under manager's decision
 % Run 3: Decrease weights + Decrease parameters → What SHOULD be done
 %
-% January: mean mast integrated out, full recruitment uncertainty (cvw = 0.225)
-% April:   weather-adjusted recruitment, partial uncertainty (cvw = 0.225)
+% September decision point: mast observed, recruitment known (cvw=0, osig=1.0)
 %
 % Winter et al. 20XX
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -20,27 +19,27 @@ addpath(genpath('C:/Users/vaw5154/OneDrive - The Pennsylvania State University/P
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% USER OPTIONS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 save_results = true;
 
-output_dir = 'Results/TrueMismatch_Results_Updated';
-if ~exist(output_dir, 'dir'), mkdir(output_dir); end
+% Create output directory
+output_dir = 'Results/TrueMismatch_Results';
+if ~exist(output_dir, 'dir')
+    mkdir(output_dir);
+end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% SETUP
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 slope    = 0.2;
 uw_fixed = 0.2;
-omu      = 12.998;
+omu      = 12.998;   % change to 5 or 16 for mast sensitivity
 L        = (0:3)';
-
-% Simulation parameters (used for computePopResponse fallback)
-reps       = 100000;
-time_steps = 200;
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% COMBINATIONS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-months    = {'January', 'April'};
+months    = {'September'};
 scenarios = {'A', 'B', 'C'};
 weathers  = {'warm', 'cold'};
 
@@ -55,11 +54,12 @@ end
 for m = 1:length(months)
     scenario_month = months{m};
 
-    % April uses weather to set Pbar; January does not
-    if strcmp(scenario_month, 'April')
-        weather_list = weathers;
-    else
+    % September and April both use weather to set Pbar
+    % January does not
+    if strcmp(scenario_month, 'January')
         weather_list = {''};
+    else
+        weather_list = weathers;
     end
 
     for w = 1:length(weather_list)
@@ -69,10 +69,10 @@ for m = 1:length(months)
             scenario_weight = scenarios{s};
 
             % Run identifier
-            if strcmp(scenario_month, 'April')
-                run_id = sprintf('%s_%s_Scenario%s', scenario_month, april_weather, scenario_weight);
-            else
+            if strcmp(scenario_month, 'January')
                 run_id = sprintf('%s_Scenario%s', scenario_month, scenario_weight);
+            else
+                run_id = sprintf('%s_%s_Scenario%s', scenario_month, april_weather, scenario_weight);
             end
 
             fprintf('\n========================================\n');
@@ -80,12 +80,14 @@ for m = 1:length(months)
             fprintf('========================================\n');
 
             try
-                %% Load weight table once per scenario
+                %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+                %% LOAD WEIGHT TABLE ONCE
+                %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 fname = sprintf('Data/norm_weights_popsize_scenario_%s.csv', scenario_weight);
                 T     = readtable(fname, 'VariableNamingRule', 'preserve');
 
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                %% RUN 1: Manager thinks Stable
+                %% RUN 1: Manager thinks Stable -- makes decision
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 fprintf('RUN 1: Manager thinks STABLE...\n');
 
@@ -95,32 +97,32 @@ for m = 1:length(months)
                 row_stable = T(strcmp(T.("Population.Size"), 'Stable'), :);
                 setGlobalWeights(row_stable.normalized_weights);
 
-                [~, results_stable, ~, ES_stable, ~, pp_stable, ~, ~, ~, ~, D_stable, ~, ~] = ...
+                [~, results_stable, ~, ES_stable, ~, pp_stable, ~, ~, ~, ~, ~, ~, ~] = ...
                     PennTurkeyModel(uw_fixed, Fbar_s, Pbar_s, slope, osig_s, omu, use_w_s, cvw_s);
 
-                optimal_stable  = getOptimalDecision(results_stable, ES_stable);
-                utility_stable  = computeUtility(results_stable, pp_stable, ES_stable);
-                [F_means_s, MJ_means_s] = computePopResponse(L, results_stable, pp_stable, D_stable, reps, time_steps);
+                optimal_stable   = getOptimalDecision(results_stable, ES_stable);
+                utility_stable   = pp_stable' * results_stable.v;
+                [F_means_s, MJ_means_s] = computePopResponse(L, results_stable, pp_stable);
 
                 fprintf('  Manager chooses: %d weeks\n', optimal_stable);
 
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                %% RUN 2: Reality is Decreasing -- manager unaware
+                %% RUN 2: Reality is Decreasing -- apply manager's decision
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 fprintf('RUN 2: Reality is DECREASE (manager unaware)...\n');
 
                 [Fbar_d, Pbar_d, osig_d, cvw_d] = setParameters(scenario_month, 'Decrease', april_weather);
                 use_w_d = (cvw_d > 0);
 
-                % Manager still uses Stable weights
+                % Manager still uses Stable weights -- unaware of true trend
                 setGlobalWeights(row_stable.normalized_weights);
 
-                [~, results_decrease, ~, ES_decrease, ~, pp_decrease, ~, ~, ~, ~, D_decrease, ~, ~] = ...
+                [~, results_decrease, ~, ES_decrease, ~, pp_decrease, ~, ~, ~, ~, ~, ~, ~] = ...
                     PennTurkeyModel(uw_fixed, Fbar_d, Pbar_d, slope, osig_d, omu, use_w_d, cvw_d);
 
                 optimal_decrease  = getOptimalDecision(results_decrease, ES_decrease);
-                utility_decrease  = computeUtility(results_decrease, pp_decrease, ES_decrease);
-                [F_means_d, MJ_means_d] = computePopResponse(L, results_decrease, pp_decrease, D_decrease, reps, time_steps);
+                utility_decrease  = pp_decrease' * results_decrease.v;
+                [F_means_d, MJ_means_d] = computePopResponse(L, results_decrease, pp_decrease);
 
                 fprintf('  Reality optimal (if known): %d weeks\n', optimal_decrease);
                 fprintf('  Decision error: %d weeks\n', optimal_stable - optimal_decrease);
@@ -133,26 +135,28 @@ for m = 1:length(months)
                 row_decrease = T(strcmp(T.("Population.Size"), 'Decrease'), :);
                 setGlobalWeights(row_decrease.normalized_weights);
 
-                [~, results_correct, ~, ES_correct, ~, pp_correct, ~, ~, ~, ~, D_correct, ~, ~] = ...
+                [~, results_correct, ~, ES_correct, ~, pp_correct, ~, ~, ~, ~, ~, ~, ~] = ...
                     PennTurkeyModel(uw_fixed, Fbar_d, Pbar_d, slope, osig_d, omu, use_w_d, cvw_d);
 
                 optimal_correct  = getOptimalDecision(results_correct, ES_correct);
-                utility_correct  = computeUtility(results_correct, pp_correct, ES_correct);
-                [F_means_c, MJ_means_c] = computePopResponse(L, results_correct, pp_correct, D_correct, reps, time_steps);
+                utility_correct  = pp_correct' * results_correct.v;
+                [F_means_c, MJ_means_c] = computePopResponse(L, results_correct, pp_correct);
 
                 fprintf('  Correct decision: %d weeks\n', optimal_correct);
 
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
                 %% CONSEQUENCES OF MISMATCH
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                % Manager's decision applied to the decreasing population
-                female_manager = F_means_d(optimal_stable + 1);
-                male_manager   = MJ_means_d(optimal_stable + 1);
+                % Population outcomes when manager's decision (optimal_stable)
+                % is applied to the decreasing population
+                female_manager  = F_means_d(optimal_stable + 1);
+                male_manager    = MJ_means_d(optimal_stable + 1);
 
-                % Correct decision applied to decreasing population
-                female_correct = F_means_c(optimal_correct + 1);
-                male_correct   = MJ_means_c(optimal_correct + 1);
+                % Population outcomes under correct decision
+                female_correct  = F_means_c(optimal_correct + 1);
+                male_correct    = MJ_means_c(optimal_correct + 1);
 
+                % Utility loss = what you would have gotten - what you got
                 utility_loss = utility_correct - utility_decrease;
 
                 fprintf('\n  CONSEQUENCES:\n');
@@ -166,10 +170,10 @@ for m = 1:length(months)
                 if save_results
                     r = result_counter;
 
-                    all_results(r).run_id   = run_id;
-                    all_results(r).month    = scenario_month;
-                    all_results(r).weather  = april_weather;
-                    all_results(r).scenario = scenario_weight;
+                    all_results(r).run_id          = run_id;
+                    all_results(r).month           = scenario_month;
+                    all_results(r).weather         = april_weather;
+                    all_results(r).scenario        = scenario_weight;
 
                     % Manager (thinks Stable)
                     all_results(r).manager_decision        = optimal_stable;
@@ -177,7 +181,7 @@ for m = 1:length(months)
                     all_results(r).manager_female_assumed  = F_means_s(optimal_stable + 1);
                     all_results(r).manager_male_assumed    = MJ_means_s(optimal_stable + 1);
 
-                    % Reality (Decrease, manager's decision applied)
+                    % Reality (Decrease, using manager's decision)
                     all_results(r).reality_decision = optimal_stable;
                     all_results(r).reality_utility  = utility_decrease;
                     all_results(r).reality_female   = female_manager;
@@ -195,13 +199,13 @@ for m = 1:length(months)
                     all_results(r).male_loss      = male_correct   - male_manager;
                     all_results(r).utility_loss   = utility_loss;
 
-                    % Full population response curves
-                    all_results(r).F_stable    = F_means_s;
-                    all_results(r).MJ_stable   = MJ_means_s;
-                    all_results(r).F_decrease  = F_means_d;
+                    % Full population response curves for plotting
+                    all_results(r).F_stable   = F_means_s;
+                    all_results(r).MJ_stable  = MJ_means_s;
+                    all_results(r).F_decrease = F_means_d;
                     all_results(r).MJ_decrease = MJ_means_d;
-                    all_results(r).F_correct   = F_means_c;
-                    all_results(r).MJ_correct  = MJ_means_c;
+                    all_results(r).F_correct  = F_means_c;
+                    all_results(r).MJ_correct = MJ_means_c;
 
                     result_counter = result_counter + 1;
                 end
@@ -219,28 +223,29 @@ end  % months
 %% SAVE RESULTS
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 if save_results && exist('all_results', 'var') && ~isempty(all_results)
-    save(fullfile(output_dir, 'true_mismatch_results_JanApr.mat'), 'all_results');
+    save(fullfile(output_dir, 'true_mismatch_results.mat'), 'all_results');
 
+    % Scalar summary for CSV
     results_simple = struct();
     for i = 1:length(all_results)
-        results_simple(i).run_id                  = all_results(i).run_id;
-        results_simple(i).month                   = all_results(i).month;
-        results_simple(i).weather                 = all_results(i).weather;
-        results_simple(i).scenario                = all_results(i).scenario;
-        results_simple(i).manager_decision        = all_results(i).manager_decision;
-        results_simple(i).correct_decision        = all_results(i).correct_decision;
-        results_simple(i).decision_error          = all_results(i).decision_error;
-        results_simple(i).manager_female_assumed  = all_results(i).manager_female_assumed;
-        results_simple(i).reality_female          = all_results(i).reality_female;
-        results_simple(i).correct_female          = all_results(i).correct_female;
-        results_simple(i).female_loss             = all_results(i).female_loss;
+        results_simple(i).run_id                 = all_results(i).run_id;
+        results_simple(i).month                  = all_results(i).month;
+        results_simple(i).weather                = all_results(i).weather;
+        results_simple(i).scenario               = all_results(i).scenario;
+        results_simple(i).manager_decision       = all_results(i).manager_decision;
+        results_simple(i).correct_decision       = all_results(i).correct_decision;
+        results_simple(i).decision_error         = all_results(i).decision_error;
+        results_simple(i).manager_female_assumed = all_results(i).manager_female_assumed;
+        results_simple(i).reality_female         = all_results(i).reality_female;
+        results_simple(i).correct_female         = all_results(i).correct_female;
+        results_simple(i).female_loss            = all_results(i).female_loss;
         results_simple(i).manager_utility_assumed = all_results(i).manager_utility_assumed;
-        results_simple(i).reality_utility         = all_results(i).reality_utility;
-        results_simple(i).correct_utility         = all_results(i).correct_utility;
-        results_simple(i).utility_loss            = all_results(i).utility_loss;
+        results_simple(i).reality_utility        = all_results(i).reality_utility;
+        results_simple(i).correct_utility        = all_results(i).correct_utility;
+        results_simple(i).utility_loss           = all_results(i).utility_loss;
     end
 
-    writetable(struct2table(results_simple), fullfile(output_dir, 'true_mismatch_summary_JanApr.csv'));
+    writetable(struct2table(results_simple), fullfile(output_dir, 'true_mismatch_summary.csv'));
 
     fprintf('\n========================================\n');
     fprintf('MISMATCH ANALYSIS COMPLETE\n');
@@ -259,7 +264,7 @@ function [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend,
         otherwise,       Fbar = 2.00; Pbar_base = 1.40;  % Decrease
     end
 
-    if strcmp(scenario_month, 'April')
+    if strcmp(scenario_month, 'April') || strcmp(scenario_month, 'September')
         switch april_weather
             case 'cold', Pbar = Pbar_base - 0.035;
             case 'warm', Pbar = Pbar_base + 0.039;
@@ -269,9 +274,17 @@ function [Fbar, Pbar, osig, cvw] = setParameters(scenario_month, scenario_trend,
         Pbar = Pbar_base;
     end
 
-    % January and April both use full mast uncertainty and recruitment CV
-    osig = 2.3;
-    cvw  = 1.116/4.96;
+    switch scenario_month
+        case 'September'
+            osig = 1.0;
+            cvw  = 0;
+        case 'April'
+            osig = 2.3;
+            cvw  = 1.116/4.96;
+        otherwise  % January
+            osig = 2.3;
+            cvw  = 1.116/4.96;
+    end
 end
 
 %--------------------------------------------------------------------------
@@ -296,7 +309,7 @@ end
 
 %--------------------------------------------------------------------------
 function opt = getOptimalDecision(results, ES)
-    % Optimal season length at the long-run expected state
+    % Returns optimal season length at the long-run expected state
     if ~isempty(ES) && length(ES) >= 4
         distances = sqrt((results.Xopt(:,2) - ES(2)).^2 + ...
                          (results.Xopt(:,3) - ES(3)).^2 + ...
@@ -309,48 +322,17 @@ function opt = getOptimalDecision(results, ES)
 end
 
 %--------------------------------------------------------------------------
-function eu = computeUtility(results, pp, ES)
-    % Expected utility: prefer stationary distribution, fall back to point estimate
-    if ~isempty(pp) && ~isempty(results.v)
-        eu = pp' * results.v;
-    elseif ~isempty(ES) && length(ES) >= 4 && ~isempty(results.v)
-        distances = sqrt((results.Xopt(:,2) - ES(2)).^2 + ...
-                         (results.Xopt(:,3) - ES(3)).^2 + ...
-                         (results.Xopt(:,4) - ES(4)).^2);
-        [~, idx] = min(distances);
-        eu = results.v(idx);
-    elseif ~isempty(results.v)
-        eu = mean(results.v);
-        warning('Using mean(v) as utility fallback.');
-    else
-        eu = NaN;
-        warning('Could not compute utility.');
-    end
-end
-
-%--------------------------------------------------------------------------
-function [F_means, MJ_means] = computePopResponse(L, results, pp, D, reps, time_steps)
-    % Use stationary distribution if available, otherwise simulate
+function [F_means, MJ_means] = computePopResponse(L, results, pp)
+    % Stationary-distribution-weighted mean populations by season length
     F_means  = zeros(length(L), 1);
     MJ_means = zeros(length(L), 1);
-
-    if ~isempty(pp)
-        % Stationary distribution path (fast, no dsim needed)
-        for i = 1:length(L)
-            idx = results.Xopt(:,1) == L(i);
-            wt  = pp(idx);
-            sw  = sum(wt);
-            if sw > 0
-                F_means(i)  = wt' * results.Xopt(idx, 4) / sw;
-                MJ_means(i) = wt' * (results.Xopt(idx,2) + results.Xopt(idx,3)) / sw;
-            end
-        end
-    else
-        % Simulation fallback for January/April when pstar is empty
-        for i = 1:length(L)
-            SS = dsim(D, ones(reps,1) * [1.5, 1.5, 3], time_steps, L(i), [], [], 0);
-            F_means(i)  = mean(SS{4}(:, end));
-            MJ_means(i) = mean(SS{1}(:, end) + SS{2}(:, end));
+    for i = 1:length(L)
+        idx = results.Xopt(:,1) == L(i);
+        w   = pp(idx);
+        sw  = sum(w);
+        if sw > 0
+            F_means(i)  = w' * results.Xopt(idx, 4) / sw;
+            MJ_means(i) = w' * (results.Xopt(idx,2) + results.Xopt(idx,3)) / sw;
         end
     end
 end
@@ -387,21 +369,29 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
     %% Decision variable
     L = (0:3)';
 
-    %% Mast: integrated out into expected harvest (January/April model)
-    O  = (0:26)';
-    po = pdfn(O, omu, osig);
-    po = ifthenelse(O<=5,  sum(po(O<=5)),  ...
-         ifthenelse(O>=15, sum(po(O>=15)), po));
-    po = po(6:16) / sum(po(6:16));
+    %% Mast distribution (truncated normal, discretized over 5:15)
+    Ovec = (0:26)';
+    po   = pdfn(Ovec, omu, osig);
+    po   = ifthenelse(Ovec<=5,  sum(po(Ovec<=5)),  ...
+           ifthenelse(Ovec>=15, sum(po(Ovec>=15)), po));
+    po   = po(6:16) / sum(po(6:16));
+    Ogrid = Ovec(6:16);
 
-    H_table = [zeros(11,1) max(0.01, (0.07 - 0.00686*O(6:16) + 0.0175*(1:3)))];
-    eH = H_table' * po;   % [4x1] expected harvest by season length
-    H  = @(L_val) eH(L_val + 1);
+    % Mast as i.i.d. discrete chance node (no parents, no transition)
+    Odist.type       = 'discrete';
+    Odist.parameters = [Ogrid, po];
+    Odist.values     = Ogrid;
+    Odist.cpt        = po;
+    Odist.size       = length(Ogrid);
+    Odist.lb         = min(Ogrid);
+    Odist.simfunc    = [];
+    Odist.ztype      = 0;
 
     %% Transition functions
     Ms = @(Md, v)          gammam * Md .* v;
     Js = @(Jd, v)          gammaj * Jd .* v;
     Fs = @(Fd, v)          gammaf * Fd .* v;
+    H  = @(Lval, Oval)     max(0.01, 0.07 - 0.00686.*Oval + 0.0175.*Lval);
 
     if use_w
         Ps = @(F_val, w) 2*eta*Pbar ./ (eta+1+(eta-1)*(F_val/Fbar).^eta) .* w;
@@ -435,29 +425,31 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
 
     %% Build decision diagram
     D = [];
-    D = add2diagram(D, 'L',       'a', true, {},              L,  [0.1278, 0.3713], []);
-    D = add2diagram(D, 'Mj',      's', true, {},              M,  [0.1196, 0.7941], []);
-    D = add2diagram(D, 'Jj',      's', true, {},              J,  [0.1125, 0.7143], []);
-    D = add2diagram(D, 'Fj',      's', true, {},              F,  [0.1172, 0.6160], []);
-    D = add2diagram(D, 'v',       'c', true, {},              v,  [0.3005, 0.9365], []);
-    D = add2diagram(D, 'w',       'c', true, {},              w,  [0.3282, 0.4451], []);
-    D = add2diagram(D, 'H',       'c', true, {'L'},           H,  [0.5181, 0.3684], [5 1]);
-    D = add2diagram(D, 'Ms',      'c', true, {'Mj','v'},      Ms, [0.4804, 0.7865], [5 1; 5 1]);
-    D = add2diagram(D, 'Js',      'c', true, {'Jj','v'},      Js, [0.4810, 0.7025], [5 1; 5 1]);
-    D = add2diagram(D, 'Fs',      'c', true, {'Fj','v'},      Fs, [0.4751, 0.6156], [5 1; 5 1]);
-    D = add2diagram(D, 'Ps',      'c', true, {'Fj','w'},      Ps, [0.4760, 0.4859], [5 1; 5 1]);
-    D = add2diagram(D, 'Mj+',     'f', true, {'Ms','Js'},     Md, [0.7376, 0.7955], [5 1; 5 1]);
-    D = add2diagram(D, 'Jj+',     'f', true, {'Fs','Ps','H'}, Jd, [0.7477, 0.7058], [5 1; 5 1; 5 1]);
-    D = add2diagram(D, 'Fj+',     'f', true, {'Fs','Ps','H'}, Fd, [0.7706, 0.6217], [5 1; 5 1; 5 1]);
-    D = add2diagram(D, 'utility', 'u', true, {'L','Mj','Jj','Fj'}, ut, [0.3649, 0.1564], [5 1; 5 1; 5 1; 5 1]);
+    D = add2diagram(D, 'L',       'a', true, {},                  L,     [0.1278, 0.3713], []);
+    D = add2diagram(D, 'Mj',      's', true, {},                  M,     [0.1196, 0.7941], []);
+    D = add2diagram(D, 'Jj',      's', true, {},                  J,     [0.1125, 0.7143], []);
+    D = add2diagram(D, 'Fj',      's', true, {},                  F,     [0.1172, 0.6160], []);
+    D = add2diagram(D, 'O',       'c', true, {},                  Odist, [0.1100, 0.4500], []);
+    D = add2diagram(D, 'v',       'c', true, {},                  v,     [0.3005, 0.9365], []);
+    D = add2diagram(D, 'w',       'c', true, {},                  w,     [0.3282, 0.4451], []);
+    D = add2diagram(D, 'H',       'c', true, {'L','O'},           H,     [0.5181, 0.3684], [length(L) 1; length(Ogrid) 1]);
+    D = add2diagram(D, 'Ms',      'c', true, {'Mj','v'},          Ms,    [0.4804, 0.7865], [5 1; 5 1]);
+    D = add2diagram(D, 'Js',      'c', true, {'Jj','v'},          Js,    [0.4810, 0.7025], [5 1; 5 1]);
+    D = add2diagram(D, 'Fs',      'c', true, {'Fj','v'},          Fs,    [0.4751, 0.6156], [5 1; 5 1]);
+    D = add2diagram(D, 'Ps',      'c', true, {'Fj','w'},          Ps,    [0.4760, 0.4859], [5 1; 5 1]);
+    D = add2diagram(D, 'Mj+',     'f', true, {'Ms','Js'},         Md,    [0.7376, 0.7955], [5 1; 5 1]);
+    D = add2diagram(D, 'Jj+',     'f', true, {'Fs','Ps','H'},     Jd,    [0.7477, 0.7058], [5 1; 5 1; 5 1]);
+    D = add2diagram(D, 'Fj+',     'f', true, {'Fs','Ps','H'},     Fd,    [0.7706, 0.6217], [5 1; 5 1; 5 1]);
+    D = add2diagram(D, 'utility', 'u', true, {'L','Mj','Jj','Fj'},ut,    [0.3649, 0.1564], [5 1; 5 1; 5 1; 5 1]);
 
-    %% Solve MDP
-    % ptype=0 for Jan/April -- full transition matrix causes out-of-memory
-    doptions = struct('d', delta, 'cleanup', 2, 'reps', 0, 'chunk', 1000, 'print', 1, 'ptype', 0);
+    %% Solve MDP (ptype=1 ensures pstar is always computed)
+    doptions = struct('d', delta, 'cleanup', 2, 'reps', 0, 'chunk', 1000, 'print', 1, 'ptype', 1);
     model    = d2model(D, doptions);
 
     moptions = struct('print', 0);
     results  = mdpsolve(model, moptions);
+
+    fprintf('  pstar empty: %d, Ixopt size: %d\n', isempty(results.pstar), length(results.Ixopt));
 
     if isfield(results, 'Ixopt')
         results.Xopt = model.X(results.Ixopt, :);
@@ -472,6 +464,8 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
         for i = 1:500
             pp = results.pstar * pp;
         end
+
+        % Marginals over M, J, F (O integrated out by d2model)
         mm = marginals(pp, [length(M) length(J) length(F)]);
         ES = pp' * [results.Xopt, Ps(results.Xopt(:,4), 1)];
 
@@ -482,9 +476,10 @@ function [model, results, mm, ES, aa, pp, F, J, M, svals, D, osig, omu] = ...
         end
 
     else
-        %% Simulation fallback (expected for Jan/April with ptype=0)
+        %% Simulation fallback (should not be reached with ptype=1)
+        warning('pstar empty -- falling back to simulation.');
         reps_sim = 100000;
-        SS = dsim(D, ones(reps_sim,1) * [1.5, 1.5, 3], 200, ...
+        SS = dsim(D, ones(reps_sim,1) * [1.5, 1.5, 3, omu], 200, ...
                   model.X(results.Ixopt, 1), [], [], 0);
         svals = linspace(0, max(F), 501)';
         mm    = cell(1, 3);
